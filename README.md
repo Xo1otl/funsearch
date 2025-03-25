@@ -8,6 +8,27 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 
 コールバック関数について、事前イベントのための関数は 動詞の現在形 + 名詞 、事後イベントのための関数は 名詞 +動詞の過去形 で命名
 
+## イベントリスナーについて
+* 時間がかかり、不確定要素の強い処理に対してのみ、事前イベントと事後イベントの両方でリスナーを登録できる必要がある
+* 処理の引数だけが重要な場合、事前イベントのみ登録できればよい
+* 処理の結果も重要な場合、事後イベントのみ登録できればよい (引数は事後でもlistenerに渡せる)
+
+### 時間がかかるため両方の事前・事後の両方でイベントリスナーが登録できるもの
+* `function.Function.evaluate`
+* `function.MutationEngine.mutate`
+
+### 処理の引数だけが重要で、事前イベントだけが登録できるもの
+いまのところ特になし
+
+### 処理の結果も重要で、事後イベントだけが登録できるもの
+* `archipelago.Evolver.on_delete_islands`
+* `archipelago.Evolver.on_best_improved`
+* `archipelago.Island.on_best_improved`
+* `archipelago.Cluster.on_fn_added`
+* `archipelago.Cluster.on_fn_selected`
+
 # TODO
 
 最初のコメントとかのpromptの枠組みを含める処理をどこが担当するのか考える
+
+LLMがたくさん考えてくれる時は、レーベルシュタイン距離が一番遠いものを採用する

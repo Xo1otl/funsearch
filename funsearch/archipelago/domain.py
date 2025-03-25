@@ -4,7 +4,7 @@ from funsearch import function
 
 
 class EvolverConfig(NamedTuple):
-    function: function.Function
+    initial_fn: function.Function
     islands: List['Island']
     reset_period: int
 
@@ -14,10 +14,10 @@ type SpawnEvolver = Callable[[EvolverConfig], 'Evolver']
 
 # FIXME: 煮詰まって来たら listener の型をちゃんと決める
 class Evolver(Protocol):
-    def on_delete_island(self, listener: Callable) -> observer.Unregister:
+    def on_islands_removed(self, listener: Callable) -> observer.Unregister:
         ...
 
-    def on_create_island(self, listener: Callable) -> observer.Unregister:
+    def on_islands_revived(self, listener: Callable) -> observer.Unregister:
         ...
 
     def on_best_improved(self, listener: Callable) -> observer.Unregister:
@@ -33,7 +33,7 @@ class Evolver(Protocol):
 class IslandsProps(NamedTuple):
     num_islands: int
     initial_fn: function.Function
-    mutation_engine: function.MutationEngine
+    fn_mutation_engine: function.MutationEngine
 
 
 type GenerateIslands = Callable[[IslandsProps], List[Island]]
@@ -61,11 +61,14 @@ class Cluster(Protocol):
     def signature(self):
         ...
 
+    def add_fn(self, fn: function.Function):
+        ...
+
+    def on_fn_added(self, listener: Callable[[function.Function], None]) -> observer.Unregister:
+        ...
+
     def select_fn(self) -> function.Function:
         ...
 
-    def on_select_fn(self, listener: Callable) -> observer.Unregister:
-        ...
-
-    def on_fn_selected(self, listener: Callable) -> observer.Unregister:
+    def on_fn_selected(self, listener: Callable[[List[function.Function], function.Function], None]) -> observer.Unregister:
         ...

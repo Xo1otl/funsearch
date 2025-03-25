@@ -3,14 +3,15 @@ from funsearch import observer
 
 
 class MutationEngine(Protocol):
+    # 複数の関数を受け取り、それらを使って変異体を生成する
+    def mutate(self, fn_list: List['Function']) -> 'Function':
+        ...
+
+    # 時間がかかる操作について、処理の前後にリスナーを登録できるようにする
     def on_mutate(self, listener: Callable[[List['Function']], None]) -> observer.Unregister:
         ...
 
     def on_mutated(self, listener: Callable[[List['Function'], 'Function'], None]) -> observer.Unregister:
-        ...
-
-    # 複数の関数を受け取り、それらを使って変異体を生成する
-    def mutate(self, fn_list: List['Function']) -> 'Function':
         ...
 
 
@@ -31,13 +32,14 @@ class Function(Protocol, Generic[T]):
     def skeleton(self) -> 'Skeleton':
         ...
 
+    def evaluate(self) -> 'Score':
+        ...
+
+    # 時間がかかる操作について、処理の前後にリスナーを登録できるようにする
     def on_evaluate(self, listener: Callable[[T], None]) -> observer.Unregister:
         ...
 
     def on_evaluated(self, listener: Callable[[T, 'Score'], None]) -> observer.Unregister:
-        ...
-
-    def evaluate(self) -> 'Score':
         ...
 
 
