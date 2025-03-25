@@ -1,2 +1,2 @@
-from .func import *
-from .pyfunc import *
+from .domain import *
+from .python_function import *

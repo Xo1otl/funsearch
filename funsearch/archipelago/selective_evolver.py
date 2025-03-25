@@ -2,15 +2,16 @@ from typing import Callable, Any
 from .domain import *
 
 
-def _spawn_selective_evolver(config: Config) -> 'SelectiveEvolver':
+def _spawn_selective_evolver(config: EvolverConfig) -> 'SelectiveEvolver':
+    # TODO: 必要なlistenerの登録など
     return SelectiveEvolver(config)
 
 
 spawn_selective_evolver: SpawnEvolver = _spawn_selective_evolver
 
 
-class SelectiveEvolver(Evolve):
-    def __init__(self, config: Config):
+class SelectiveEvolver(Evolver):
+    def __init__(self, config: EvolverConfig):
         self.function = config.function
         self.islands = config.islands
 
