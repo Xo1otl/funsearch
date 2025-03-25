@@ -3,14 +3,14 @@ from funsearch import observer
 
 
 class MutationEngine(Protocol):
-    def on_mutate(self, listener: Callable) -> observer.Unregister:
+    def on_mutate(self, listener: Callable[[List['Function']], None]) -> observer.Unregister:
         ...
 
-    def on_mutated(self, listener: Callable) -> observer.Unregister:
+    def on_mutated(self, listener: Callable[[List['Function'], 'Function'], None]) -> observer.Unregister:
         ...
 
     # 複数の関数を受け取り、それらを使って変異体を生成する
-    def mutate(self, fn: List['Function']) -> 'Function':
+    def mutate(self, fn_list: List['Function']) -> 'Function':
         ...
 
 
@@ -44,5 +44,5 @@ class Function(Protocol, Generic[T]):
 Evaluator = Callable[[T], 'Score']
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-Skeleton = Callable[]
+Skeleton = Callable
 type Score = float

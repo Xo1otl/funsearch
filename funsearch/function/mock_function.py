@@ -3,9 +3,7 @@ from funsearch import observer
 from typing import Callable, List
 
 
-class PythonLLMMutationEngine(MutationEngine):
-    # TODO: LLM を操作するための依存関係を設定できるようにする
-    # TODO: 関数と一緒に送信するコメント部分など、Promptのテンプレートも設定する
+class MockMutationEngine(MutationEngine):
     def __init__(self):
         self._on_mutate_listeners: List[Callable] = []
         self._on_mutated_listeners: List[Callable] = []
@@ -27,14 +25,14 @@ class PythonLLMMutationEngine(MutationEngine):
         return new_fn
 
 
-def _new_python_function(props: FunctionProps) -> Function:
-    return PythonFunction(props)
+def _new_mock_function(props: FunctionProps) -> Function:
+    return MockFunction(props)
 
 
-new_python_function: NewFunction = _new_python_function
+new_mock_function: NewFunction = _new_mock_function
 
 
-class PythonFunction(Function):
+class MockFunction(Function):
     def __init__(self, props: FunctionProps):
         self._score = float('inf')
         self._skeleton = props.skeleton
