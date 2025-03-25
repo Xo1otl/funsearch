@@ -4,9 +4,6 @@ from typing import Callable, List
 
 
 class MockMutateEngine(function.MutationEngine):
-    def __init__(self):
-        ...
-
     def on_mutate(self, listener: Callable) -> observer.Unregister:
         raise NotImplementedError
 
@@ -18,18 +15,24 @@ class MockMutateEngine(function.MutationEngine):
 
 
 def _new_function(props: function.FunctionProps) -> function.Function:
-    return MockFunction()
+    return MockFunction(props)
 
 
 new_function: function.NewFunction = _new_function
 
 
 class MockFunction(function.Function):
-    def score(self) -> float:
-        raise NotImplementedError
+    def __init__(self, props: function.FunctionProps):
+        self._score = float('inf')
+        self._skeleton = props.skeleton
+        self._evaluator = props.evaluator
+        self._evaluator_arg = props.evaluator_arg
 
-    def skeleton(self) -> str:
-        raise NotImplementedError
+    def score(self) -> float:
+        return self._score
+
+    def skeleton(self) -> Callable:
+        return self._skeleton
 
     def on_evaluate(self, listener: Callable) -> Callable[[], None]:
         raise NotImplementedError
@@ -38,13 +41,22 @@ class MockFunction(function.Function):
         raise NotImplementedError
 
     def evaluate(self) -> float:
-        raise NotImplementedError
+        self._score = self._evaluator(self._evaluator_arg)
+        return self._score
 
 
 def test_mock_mutate_engine():
+    def skeleton(): return None
+    def evaluator(_: str): return 0.0
     engine = MockMutateEngine()
-    functions = [new_function(function.FunctionProps(
-        skeleton="skeleton", evaluator="evaluator")) for _ in range(10)]
+    functions = []
+    for _ in range(10):
+        props = function.FunctionProps(skeleton, "AAA", evaluator)
+        fn = new_function(props)
+        fn.on_evaluate(lambda props: print(f"evaluating props: {props}"))
+        fn.on_evaluated(lambda props, score: print(
+            f"evaluated props: {props} -> score: {score}"))
+        functions.append(fn)
     engine.mutate(functions)
 
 

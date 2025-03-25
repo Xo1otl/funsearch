@@ -1,4 +1,4 @@
-from typing import Protocol, Callable, NamedTuple, List
+from typing import Protocol, Callable, NamedTuple, List, Any, Generic, TypeVar
 from funsearch import observer
 
 
@@ -14,31 +14,35 @@ class MutationEngine(Protocol):
         ...
 
 
-type NewFunction = Callable[[FunctionProps], Function]
+T = TypeVar('T')
+type NewFunction = Callable[[FunctionProps[T]], Function[T]]
 
 
-class FunctionProps(NamedTuple):
+class FunctionProps(NamedTuple, Generic[T]):
     skeleton: 'Skeleton'
-    evaluator: 'Evaluator'
+    evaluator_arg: T
+    evaluator: 'Evaluator[T]'
 
 
-class Function(Protocol):
+class Function(Protocol, Generic[T]):
     def score(self) -> 'Score':
         ...
 
     def skeleton(self) -> 'Skeleton':
         ...
 
-    def on_evaluate(self, listener: Callable) -> observer.Unregister:
+    def on_evaluate(self, listener: Callable[[T], None]) -> observer.Unregister:
         ...
 
-    def on_evaluated(self, listener: Callable) -> observer.Unregister:
+    def on_evaluated(self, listener: Callable[[T, 'Score'], None]) -> observer.Unregister:
         ...
 
     def evaluate(self) -> 'Score':
         ...
 
 
-type Skeleton = str
-type Evaluator = str
+Evaluator = Callable[[T], 'Score']
+# Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
+# それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
+Skeleton = Callable[]
 type Score = float
