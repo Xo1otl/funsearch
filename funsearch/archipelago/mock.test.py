@@ -3,7 +3,7 @@ from funsearch import function
 import time
 
 
-def test_evolver():
+def test_mock_evolver():
     def skeleton(a: int, b: int):
         return a + b
 
@@ -30,4 +30,4 @@ def test_evolver():
 
 
 if __name__ == '__main__':
-    test_evolver()
+    test_mock_evolver()

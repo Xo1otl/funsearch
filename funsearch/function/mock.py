@@ -1,5 +1,8 @@
+from funsearch.function.domain import Function
 from .domain import *
 from typing import List
+import time
+import copy
 
 
 # 例えば llm を使った engine を作りたい時 __init__ で prompt template を渡せるようにすればよい
@@ -10,9 +13,9 @@ class MockMutationEngine(MutationEngine):
     def mutate(self, fn_list: List['Function']):
         for profiler_fn in self._profilers:
             profiler_fn(OnMutate(type="on_mutate", payload=fn_list))
-        new_fn = fn_list[0]
-        # テストのために evaluateしてみる
-        new_fn.evaluate()
+        time.sleep(3)
+        # ここでは evaluate まではしない予定なので mock でも skeleton を更新して未評価にして関数を返す
+        new_fn = fn_list[0].clone(fn_list[0].skeleton())
         for profiler_fn in self._profilers:
             profiler_fn(OnMutated(
                 type="on_mutated",
@@ -60,6 +63,9 @@ class MockFunction(Function):
         return self._skeleton
 
     def evaluate(self):
+        # 基本的にimmutableとして関数の進化時などは新しいものを作るので、すでに評価済みの関数を再評価することはない
+        if self._score is not None:
+            raise ValueError("score is already evaluated")
         for profiler_fn in self._profilers:
             profiler_fn(OnEvaluate(
                 type="on_evaluate", payload=self._evaluator_arg
@@ -74,3 +80,10 @@ class MockFunction(Function):
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
+
+    def clone(self, new_skeleton=None) -> Function:
+        cloned_function = copy.copy(self)
+        if new_skeleton is not None:
+            cloned_function._skeleton = new_skeleton
+            cloned_function._score = None
+        return cloned_function

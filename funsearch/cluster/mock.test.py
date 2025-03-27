@@ -1,9 +1,10 @@
+from funsearch import archipelago
 from funsearch import function
+from funsearch import cluster
 import time
 
 
-def test_mock():
-    # function の準備
+def test_mock_cluster():
     def skeleton(a: int, b: int):
         return a + b
 
@@ -13,9 +14,8 @@ def test_mock():
         return score
 
     props = function.FunctionProps(skeleton, "A" * 10, evaluator)
-    functions = [function.new_mock_function(props) for _ in range(10)]
+    initial_fn = function.new_mock_function(props)
 
-    # engine の準備
     def profile_engine_events(event: function.MutationEngineEvent):
         print("*" * 20)
         if event.type == "on_mutate":
@@ -27,8 +27,25 @@ def test_mock():
 
     engine = function.MockMutationEngine()
     engine.use_profiler(profile_engine_events)
-    engine.mutate(functions)
+
+    config = cluster.MockIslandsConfig(
+        num_islands=3,
+        num_clusters=3,
+        initial_fn=initial_fn,
+        mutation_engine=engine,
+    )
+
+    islands = cluster.generate_mock_islands(config)
+    config = archipelago.EvolverConfig(
+        islands=islands,
+        num_parallel=3,
+        reset_period=5
+    )
+
+    evolver = archipelago.spawn_mock_evolver(config)
+
+    evolver.start()
 
 
-if __name__ == "__main__":
-    test_mock()
+if __name__ == '__main__':
+    test_mock_cluster()

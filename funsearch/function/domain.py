@@ -48,6 +48,10 @@ class OnEvaluated[EvaluatorArg](NamedTuple):
 
 type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[EvaluatorArg]
 
+# Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
+# それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
+type Skeleton = Callable
+
 
 class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Protocol):
     def score(self) -> 'FunctionScore':
@@ -59,9 +63,20 @@ class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Pr
     def evaluate(self) -> 'FunctionScore':
         ...
 
+    def clone(self, new_skeleton: Skeleton | None = None) -> 'Function':
+        """
+        現在の Function インスタンスのクローンを返します。
+
+        Args:
+            new_skeleton: 新しい skeleton を指定した場合、クローンはこの skeleton を使用し、
+                          score はリセットされます。None の場合は元の skeleton を引き継ぎ、
+                          score はそのままとなります。
+
+        Returns:
+            クローンされた Function インスタンス。
+        """
+        ...
+
 
 type Evaluator[EvaluatorArg] = Callable[[EvaluatorArg], 'FunctionScore']
-# Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
-# それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-type Skeleton = Callable
 type FunctionScore = float

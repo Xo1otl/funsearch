@@ -4,10 +4,11 @@ from .domain import *
 import time
 import threading
 import concurrent.futures
+import traceback
 
 
 def _spawn_mock_evolver(config: EvolverConfig) -> Evolver:
-    def profile_evolver(event: EvolverEvent):
+    def profile_events(event: EvolverEvent):
         print("*" * 20)
         if event.type == "on_islands_removed":
             print(
@@ -16,7 +17,7 @@ def _spawn_mock_evolver(config: EvolverConfig) -> Evolver:
             print(
                 f" pointer list of islands revived -> {[hex(id(i)) for i in event.payload]}")
     evolver = MockEvolver(config)
-    evolver.use_profiler(profile_evolver)
+    evolver.use_profiler(profile_events)
     return evolver
 
 
@@ -36,7 +37,7 @@ class MockEvolver(Evolver):
 
     def _reset_islands(self):
         # 一番良い島を取得
-        best = max(self.islands, key=lambda island: island.score())
+        best_island = max(self.islands, key=lambda island: island.score())
         # 島をスコアの低い順に並べ替える
         sorted_islands = sorted(
             self.islands, key=lambda island: island.score())
@@ -44,13 +45,14 @@ class MockEvolver(Evolver):
         if num_to_reset == 0:
             return
 
-        # 下位半分をリセット対象とする
+        # 下位半分をリセット対象とする (LLM-SRと同じ基準)
         to_reset = sorted_islands[:num_to_reset]
 
         # 一番良い島の best_fn とスコアを使って、新しい島を生成する
+        best_fn = best_island.best_fn()
         new_islands: List[Island] = [
-            MockIsland(initial_fn=best.best_fn(), initial_score=best.score())
-            for _ in to_reset
+            # skeleton も変えていないので clone された function ではスコアも保持されている
+            MockIsland(initial_fn=best_fn.clone(), initial_score=best_fn.score()) for _ in to_reset
         ]
 
         removed_islands = []
@@ -83,6 +85,7 @@ class MockEvolver(Evolver):
                 except Exception as e:
                     # In a mock, simply ignore mutation errors.
                     print(f"Error during mutation: {e}")
+                    traceback.print_exc()
                     continue
                 # If this island now has a higher score than any previous best,
                 # update best_island and trigger the on_best_island_improved event.
@@ -95,7 +98,7 @@ class MockEvolver(Evolver):
     def _run(self):
         last_reset_time = time.time()
         while self.running:
-            # FIXME: 並列で処理するけど、全部一斉に終わらないと次に行かない設計になってる、ちょっと効率悪いから、時間があれば直そう
+            # TODO: 並列で処理するけど、全部一斉に終わらないと次に行かない設計になってる、ちょっと効率悪いから、時間があれば直そう
             # Go の context みたいなのがあれば安全に実装できそうだが、完璧な実装はかなり大変そう
             self._evolve_islands()
             # Check if it's time to reset low-scoring islands.
@@ -128,10 +131,9 @@ class MockEvolver(Evolver):
 
 
 def _generate_islands(config: IslandsConfig) -> List[Island]:
-    islands: List[Island] = [MockIsland(
-        initial_fn=config.initial_fn,
-        initial_score=-float("inf")
-    ) for _ in range(config.num_islands)]
+    islands: List[Island] = [
+        MockIsland(config.initial_fn, -float("inf")) for _ in range(config.num_islands)
+    ]
     # TODO: 必要なlistenerの登録など
     return islands
 
@@ -140,7 +142,7 @@ generate_islands: GenerateIslands = _generate_islands
 
 
 class MockIsland(Island):
-    def __init__(self, initial_fn: function.Function, initial_score: float):
+    def __init__(self, initial_fn: function.Function, initial_score: function.FunctionScore):
         self._best_fn = initial_fn
         self._score = initial_score
         self._profilers: List[Callable[[IslandEvent], None]] = []
@@ -149,18 +151,21 @@ class MockIsland(Island):
         print("*" * 20)
         print("  -> mutation requested")
         time.sleep(3)
-        fn = self._best_fn
-        new_score = fn.evaluate()
+        # evaluate するには skeleton を置き換えて score をリセットする必要がある
+        new_fn = self._best_fn.clone(self._best_fn.skeleton())
+        new_score = new_fn.evaluate()
+        # TODO: score を見て new_fn を適切な cluster に移動する処理が必要
         if new_score > self._score:
+            # 最良の関数のスコアをそのまま島のスコアとする (LLM-SRと同じ基準)
             self._score = new_score
-            self._best_fn = fn
+            self._best_fn = new_fn
             for profiler_fn in self._profilers:
                 profiler_fn(OnBestFnImproved(
                     type="on_best_fn_improved",
-                    payload=fn
+                    payload=new_fn
                 ))
         print(f"  -> mutation done with score {new_score}")
-        return fn
+        return new_fn
 
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
