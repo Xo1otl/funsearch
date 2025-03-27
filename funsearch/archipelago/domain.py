@@ -5,6 +5,7 @@ from funsearch import profiler
 
 class EvolverConfig(NamedTuple):
     islands: List['Island']
+    num_parallel: int
     reset_period: int
 
 
@@ -38,6 +39,7 @@ class Evolver(profiler.Pluggable[EvolverEvent], Protocol):
 
 
 class IslandsConfig(NamedTuple):
+    initial_fn: function.Function
     num_islands: int
 
 
@@ -62,9 +64,6 @@ class Island(profiler.Pluggable[IslandEvent], Protocol):
     # 島の変化はより上位の存在がコントロールしており、変化は外部からの要求によって行う
     # これは、島の数だけ計算リソースが必要になることを避け、島を保持しながら余裕がある時だけ計算を呼び出すためである
     def request_mutation(self) -> function.Function:
-        # TODO: LLMに投げる部分をここで実装
-        #  clusterから取得した関数情報に加えて、コメントなどのコンテキストをプロンプトに含める必要がある
-        #  mutationのリクエストを行う場合
         ...
 
 

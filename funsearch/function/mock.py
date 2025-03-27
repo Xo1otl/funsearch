@@ -2,9 +2,10 @@ from .domain import *
 from typing import List
 
 
+# 例えば llm を使った engine を作りたい時 __init__ で prompt template を渡せるようにすればよい
 class MockMutationEngine(MutationEngine):
     def __init__(self):
-        self._profilers = []
+        self._profilers: List[Callable[[MutationEngineEvent], None]] = []
 
     def mutate(self, fn_list: List['Function']):
         for profiler_fn in self._profilers:
@@ -48,7 +49,7 @@ class MockFunction(Function):
         self._skeleton = props.skeleton
         self._evaluator = props.evaluator
         self._evaluator_arg = props.evaluator_arg
-        self._profilers = []
+        self._profilers: List[Callable[[FunctionEvent], None]] = []
 
     def score(self):
         if self._score is None:
