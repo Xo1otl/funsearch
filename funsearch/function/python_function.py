@@ -20,6 +20,7 @@ class PythonLLMMutationEngine(MutationEngine):
             profiler_fn(OnMutate(type="on_mutate", payload=fn_list))
         time.sleep(3)
         # ここでは evaluate まではしない予定なので python でも skeleton を更新して未評価にして関数を返す
+        # TODO: skeleton 生成は llm の出力に対して関数などを適用して行う
         new_fn = fn_list[0].clone(fn_list[0].skeleton())
         for profiler_fn in self._profilers:
             profiler_fn(OnMutated(
@@ -88,6 +89,24 @@ class PythonFunction(Function):
             cloned_function._skeleton = new_skeleton
             cloned_function._score = None
         return cloned_function
+
+
+# TODO: source_code から関数作るところまで クラス内で書き切るのは大変そうなので sandbox や llm といった名前の新しいmodule作ってそれを init で DI する設計を考える
+class PythonSkeleton(Skeleton):
+    def __init__(self, source_code: str, callable_fn: Callable | None = None):
+        self._source_code = source_code
+        # callable_fn が渡された場合はそれを使う
+        if callable_fn is not None:
+            self._callable_fn = callable_fn
+        else:
+            # そうでない場合は source_code から関数を作る
+            self._callable_fn = eval(source_code)
+
+    def __call__(self, *args: Any, **kwargs: Any):
+        ...
+
+    def source_code(self):
+        return self._source_code
 
 
 class MockPythonSkeleton(Skeleton):
