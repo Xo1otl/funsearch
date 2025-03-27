@@ -32,11 +32,7 @@ def new_mock_function[EvaluatorArg](props: FunctionProps[EvaluatorArg]) -> Funct
     fn = MockFunction(props)
 
     def profile_events(event: FunctionEvent[EvaluatorArg]):
-        print("*" * 20)
-        if event.type == "on_evaluate":
-            print(f"fn event -> {event.type}, {event.payload}")
-        if event.type == "on_evaluated":
-            print(f"fn event -> {event.type}, {event.payload}")
+        profiler.display_event(event)
 
     fn.use_profiler(profile_events)
     return fn

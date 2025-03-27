@@ -1,5 +1,6 @@
 from typing import Callable
 from funsearch import function
+from funsearch import profiler
 from .domain import *
 import time
 import threading
@@ -9,13 +10,8 @@ import traceback
 
 def _spawn_mock_evolver(config: EvolverConfig) -> Evolver:
     def profile_events(event: EvolverEvent):
-        print("*" * 20)
-        if event.type == "on_islands_removed":
-            print(
-                f" pointer list of islands removed -> {[hex(id(i)) for i in event.payload]}")
-        if event.type == "on_islands_revived":
-            print(
-                f" pointer list of islands revived -> {[hex(id(i)) for i in event.payload]}")
+        profiler.display_event(event)
+
     evolver = MockEvolver(config)
     evolver.use_profiler(profile_events)
     return evolver
@@ -148,7 +144,6 @@ class MockIsland(Island):
         self._profilers: List[Callable[[IslandEvent], None]] = []
 
     def request_mutation(self):
-        print("*" * 20)
         print("  -> mutation requested")
         time.sleep(3)
         # evaluate するには skeleton を置き換えて score をリセットする必要がある

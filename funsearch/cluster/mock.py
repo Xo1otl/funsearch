@@ -2,6 +2,7 @@ from .cluster import *
 import time
 from funsearch import function
 from funsearch import archipelago
+from funsearch import profiler
 import numpy as onp
 import scipy
 from typing import List, Callable
@@ -21,8 +22,11 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
         island = MockIsland(
             config.initial_fn, initial_score, config.mutation_engine, config.num_clusters
         )
-        # TODO: もっとマシな profiler 書く
-        island.use_profiler(lambda event: print(event))
+
+        def profiler_fn(event: archipelago.IslandEvent):
+            profiler.display_event(event)
+
+        island.use_profiler(profiler_fn)
         islands.append(island)
     return islands
 
@@ -59,7 +63,6 @@ class MockIsland(archipelago.Island):
         ...
 
     def request_mutation(self):
-        print("*" * 20)
         print("  -> mutation requested")
         time.sleep(3)
         sample_clusters = self._select_clusters()
@@ -94,8 +97,11 @@ class MockIsland(archipelago.Island):
 
 def _spawn_mock_cluster(props: ClusterProps) -> Cluster:
     cluster = MockCluster(props)
-    # TODO: もっとマシな profiler 書く
-    cluster.use_profiler(lambda event: print(event))
+
+    def profiler_fn(event: ClusterEvent):
+        profiler.display_event(event)
+
+    cluster.use_profiler(profiler_fn)
     return cluster
 
 

@@ -1,4 +1,5 @@
 from funsearch import function
+from funsearch import profiler
 import time
 
 
@@ -17,13 +18,7 @@ def test_mock():
 
     # engine の準備
     def profile_engine_events(event: function.MutationEngineEvent):
-        print("*" * 20)
-        if event.type == "on_mutate":
-            print(
-                f"fn pointer list used for mutation: -> {[hex(id(fn)) for fn in event.payload]}")
-        if event.type == "on_mutated":
-            print(
-                f"mutated new_fn pointer: -> {hex(id(event.payload[1]))}")
+        profiler.display_event(event)
 
     engine = function.MockMutationEngine()
     engine.use_profiler(profile_engine_events)
