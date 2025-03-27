@@ -6,8 +6,7 @@ import time
 
 
 def test_mock_cluster():
-    def skeleton(a: int, b: int):
-        return a + b
+    skeleton = function.MockPythonSkeleton()
 
     def evaluator(arg: str):
         time.sleep(1)

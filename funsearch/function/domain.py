@@ -1,4 +1,4 @@
-from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple
+from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple, Any
 from funsearch import profiler
 
 
@@ -48,16 +48,22 @@ class OnEvaluated[EvaluatorArg](NamedTuple):
 
 type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[EvaluatorArg]
 
+
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-type Skeleton = Callable
+class Skeleton(Protocol):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        ...
+
+    def source_code(self) -> str:
+        ...
 
 
 class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Protocol):
     def score(self) -> 'FunctionScore':
         ...
 
-    def skeleton(self) -> 'Skeleton':
+    def skeleton(self) -> Skeleton:
         ...
 
     def evaluate(self) -> 'FunctionScore':

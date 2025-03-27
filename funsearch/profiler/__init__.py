@@ -1,5 +1,6 @@
 from typing import Callable, Protocol, Any
 import logging
+import textwrap
 
 type Remove = Callable[[], None]
 
@@ -23,21 +24,46 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
+def format_source_code(source: str) -> str:
+    """
+    入力されたソースコード文字列から共通の先頭空白を削除し、
+    見やすい形に整形して返します。
+    """
+    dedented = textwrap.dedent(source)
+    formatted = "\n" + dedented.strip() + "\n"
+    return formatted
+
+
+def format_value(value: Any) -> str:
+    # それ以外の場合、skeleton属性を持つならsource_code()の結果を整形して返す
+    if hasattr(value, "best_fn"):
+        skeleton_fn = value.best_fn().skeleton
+        if callable(skeleton_fn):
+            sk = skeleton_fn()
+            if hasattr(sk, "source_code") and callable(sk.source_code):  # type: ignore
+                return format_source_code(sk.source_code())  # type: ignore
+    if hasattr(value, "skeleton"):
+        skeleton_fn = value.skeleton
+        if callable(skeleton_fn):
+            sk = skeleton_fn()
+            if hasattr(sk, "source_code") and callable(sk.source_code):  # type: ignore
+                return format_source_code(sk.source_code())  # type: ignore
+    # ListまたはTupleの場合は各要素に対して再帰的にformat_valueを適用
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(format_value(item) for item in value) + "]"
+    return str(value)
+
+
 def display_event(event: Event) -> None:
-    # 基本のイベント情報を設定します。
     base_message = f"Event: {event.type}"
-
-    # payloadの詳細情報をインデント付きでまとめます。
     detail_lines = []
-    if isinstance(event.payload, dict):
-        for key, value in event.payload.items():
-            # 各項目をインデントして見やすくします。
-            detail_lines.append(f"    {key}: {value}")
+
+    formatted = format_value(event.payload)
+    if "\n" in formatted:
+        detail_lines.append(
+            f"    Payload:\n{textwrap.indent(formatted, '        ')}")
     else:
-        # 辞書でない場合も、インデントして出力します。
-        detail_lines.append(f"    Payload: {event.payload}")
+        detail_lines.append(f"    Payload: {formatted}")
 
-    # 基本のメッセージと詳細情報を結合して、一度にログ出力できるようにします。
     complete_message = "\n".join([base_message] + detail_lines)
-
     logger.info(complete_message)

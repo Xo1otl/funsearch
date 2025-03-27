@@ -4,8 +4,7 @@ import time
 
 
 def test_mock_evolver():
-    def skeleton(a: int, b: int):
-        return a + b
+    skeleton = function.MockPythonSkeleton()
 
     def evaluator(arg: str):
         time.sleep(1)

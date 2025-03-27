@@ -3,7 +3,7 @@ from funsearch import profiler
 import time
 
 
-def test_mock():
+def test_python():
     # function の準備
     skeleton = function.MockPythonSkeleton()
 
@@ -13,16 +13,16 @@ def test_mock():
         return score
 
     props = function.FunctionProps(skeleton, "A" * 10, evaluator)
-    functions = [function.new_mock_function(props) for _ in range(10)]
+    functions = [function.new_python_function(props) for _ in range(10)]
 
     # engine の準備
     def profile_engine_events(event: function.MutationEngineEvent):
         profiler.display_event(event)
 
-    engine = function.MockMutationEngine()
+    engine = function.new_python_llm_mutate_engine()
     engine.use_profiler(profile_engine_events)
     engine.mutate(functions)
 
 
 if __name__ == "__main__":
-    test_mock()
+    test_python()
