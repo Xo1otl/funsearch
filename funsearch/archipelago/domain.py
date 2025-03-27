@@ -1,10 +1,9 @@
-from typing import Protocol, Callable, List, NamedTuple, Never
-from funsearch import observer
+from typing import Protocol, Callable, List, NamedTuple, Literal
 from funsearch import function
+from funsearch import profiler
 
 
 class EvolverConfig(NamedTuple):
-    initial_fn: function.Function
     islands: List['Island']
     reset_period: int
 
@@ -12,63 +11,61 @@ class EvolverConfig(NamedTuple):
 type SpawnEvolver = Callable[[EvolverConfig], 'Evolver']
 
 
-# FIXME: 煮詰まって来たら listener の型をちゃんと決める
-class Evolver(Protocol):
-    def on_islands_removed(self, listener: Callable) -> observer.Unregister:
+class OnIslandsRemoved(NamedTuple):
+    type: Literal["on_islands_removed"]
+    payload: List['Island']
+
+
+class OnIslandsRevived(NamedTuple):
+    type: Literal["on_islands_revived"]
+    payload: List['Island']
+
+
+class OnBestIslandImproved(NamedTuple):
+    type: Literal["on_best_island_improved"]
+    payload: 'Island'
+
+
+type EvolverEvent = OnIslandsRemoved | OnIslandsRevived | OnBestIslandImproved
+
+
+class Evolver(profiler.Pluggable[EvolverEvent], Protocol):
+    def start(self) -> None:
         ...
 
-    def on_islands_revived(self, listener: Callable) -> observer.Unregister:
-        ...
-
-    def on_best_improved(self, listener: Callable) -> observer.Unregister:
-        ...
-
-    def start(self):
-        ...
-
-    def stop(self):
+    def stop(self) -> None:
         ...
 
 
-class IslandsProps(NamedTuple):
+class IslandsConfig(NamedTuple):
     num_islands: int
-    initial_fn: function.Function
-    fn_mutation_engine: function.MutationEngine
 
 
-type GenerateIslands = Callable[[IslandsProps], List[Island]]
+type GenerateIslands = Callable[[IslandsConfig], List['Island']]
 
 
-class Island(Protocol):
-    def on_best_improved(self, listener: Callable) -> observer.Unregister:
+class OnBestFnImproved(NamedTuple):
+    type: Literal["on_best_fn_improved"]
+    payload: 'function.Function'
+
+
+type IslandEvent = OnBestFnImproved
+
+
+class Island(profiler.Pluggable[IslandEvent], Protocol):
+    def score(self) -> 'IslandScore':
+        ...
+
+    def best_fn(self) -> function.Function:
         ...
 
     # 島の変化はより上位の存在がコントロールしており、変化は外部からの要求によって行う
     # これは、島の数だけ計算リソースが必要になることを避け、島を保持しながら余裕がある時だけ計算を呼び出すためである
-    def request_mutation(self):
+    def request_mutation(self) -> function.Function:
+        # TODO: LLMに投げる部分をここで実装
+        #  clusterから取得した関数情報に加えて、コメントなどのコンテキストをプロンプトに含める必要がある
+        #  mutationのリクエストを行う場合
         ...
 
 
-class ClusterProps(NamedTuple):
-    signature: Never
-    initial_fn: function.Function
-
-
-type SpawnCluster = Callable[[ClusterProps], Cluster]
-
-
-class Cluster(Protocol):
-    def signature(self):
-        ...
-
-    def add_fn(self, fn: function.Function):
-        ...
-
-    def on_fn_added(self, listener: Callable[[function.Function], None]) -> observer.Unregister:
-        ...
-
-    def select_fn(self) -> function.Function:
-        ...
-
-    def on_fn_selected(self, listener: Callable[[List[function.Function], function.Function], None]) -> observer.Unregister:
-        ...
+type IslandScore = float

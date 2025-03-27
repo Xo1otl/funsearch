@@ -1,38 +1,32 @@
 from funsearch import function
+import time
 
 
-def test_mock_mutate_engine():
+def test_mock():
     def skeleton(a: int, b: int):
         return a + b
 
     def evaluator(arg: str):
-        score = skeleton(1, 2) / len(arg)
+        time.sleep(1)
+        score = skeleton(1, 3) / len(arg)
         return score
 
     engine = function.MockMutationEngine()
-    functions = []
-    for _ in range(10):
-        props = function.FunctionProps(skeleton, "A" * 10, evaluator)
-        fn = function.new_mock_function(props)
-        fn.on_evaluate(lambda props: print(f"evaluating props: {props}"))
-        fn.on_evaluated(
-            lambda props, score: print(
-                f"evaluated props: {props} -> score: {score}"
-            )
-        )
-        functions.append(fn)
-    engine.on_mutate(lambda fn_list: print(
-        f"mutate -> {len(fn_list)} functions: {[fn.skeleton().__name__ for fn in fn_list]}"))
+    props = function.FunctionProps(skeleton, "A" * 10, evaluator)
+    functions = [function.new_mock_function(props) for _ in range(10)]
 
-    def on_mutated(fn_list, new_fn):
-        print(
-            f"mutated -> new function: {new_fn.skeleton().__name__}, from functions: {[fn.skeleton().__name__ for fn in fn_list]}")
-        new_fn.evaluate()
-        print(f"new function evaluated -> score: {new_fn.score()}")
+    def profile_engine_events(event: function.MutationEngineEvent):
+        print("*" * 20)
+        if event.type == "on_mutate":
+            print(
+                f"fn pointer list used for mutation: -> {[hex(id(fn.skeleton())) for fn in event.payload]}")
+        if event.type == "on_mutated":
+            print(
+                f"mutated new_fn pointer: -> {hex(id(event.payload[1].skeleton()))}")
 
-    engine.on_mutated(on_mutated)
+    engine.use_profiler(profile_engine_events)
     engine.mutate(functions)
 
 
 if __name__ == "__main__":
-    test_mock_mutate_engine()
+    test_mock()

@@ -1,50 +1,67 @@
-from typing import Protocol, Callable, NamedTuple, List, Any, Generic, TypeVar
-from funsearch import observer
+from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple
+from funsearch import profiler
 
 
-class MutationEngine(Protocol):
+# Mutateの処理は時間がかかるため、処理の前後でイベントを発火する
+class OnMutate(NamedTuple):
+    type: Literal["on_mutate"]
+    payload: List['Function']
+
+
+class OnMutated(NamedTuple):
+    type: Literal["on_mutated"]
+    payload: Tuple[List['Function'], 'Function']
+
+
+type MutationEngineEvent = OnMutate | OnMutated
+
+
+class MutationEngine(profiler.Pluggable[MutationEngineEvent], Protocol):
     # 複数の関数を受け取り、それらを使って変異体を生成する
     def mutate(self, fn_list: List['Function']) -> 'Function':
         ...
 
-    # 時間がかかる操作について、処理の前後にリスナーを登録できるようにする
-    def on_mutate(self, listener: Callable[[List['Function']], None]) -> observer.Unregister:
-        ...
 
-    def on_mutated(self, listener: Callable[[List['Function'], 'Function'], None]) -> observer.Unregister:
-        ...
-
-
-T = TypeVar('T')
-type NewFunction = Callable[[FunctionProps[T]], Function[T]]
+# 1. FunctionProps のインスタンスを作る時 evaluator_arg と evaluator の EvaluatorArg の一致が保証される
+# 2. NewFunction を実装した関数で Function を生成する時、引数の FunctionProps と返り値の Function に EvaluatorArg が渡される
+# 3. FunctionEvent の型引数に Function の型引数の EvaluatorArg が渡され、subscribe の Event の EvaluatorArg の 一致が保証される
+type NewFunction[EvaluatorArg] = Callable[[
+    FunctionProps[EvaluatorArg]], Function[EvaluatorArg]]
 
 
-class FunctionProps(NamedTuple, Generic[T]):
+class FunctionProps[EvaluatorArg](NamedTuple):
     skeleton: 'Skeleton'
-    evaluator_arg: T
-    evaluator: 'Evaluator[T]'
+    evaluator_arg: EvaluatorArg
+    evaluator: 'Evaluator[EvaluatorArg]'
 
 
-class Function(Protocol, Generic[T]):
-    def score(self) -> 'Score':
+# Evaluateの処理は時間がかかるため、処理の前後でイベントを発火する
+class OnEvaluate[EvaluatorArg](NamedTuple):
+    type: Literal["on_evaluate"]
+    payload: EvaluatorArg
+
+
+class OnEvaluated[EvaluatorArg](NamedTuple):
+    type: Literal["on_evaluated"]
+    payload: Tuple[EvaluatorArg, 'FunctionScore']
+
+
+type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[EvaluatorArg]
+
+
+class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Protocol):
+    def score(self) -> 'FunctionScore':
         ...
 
     def skeleton(self) -> 'Skeleton':
         ...
 
-    def evaluate(self) -> 'Score':
-        ...
-
-    # 時間がかかる操作について、処理の前後にリスナーを登録できるようにする
-    def on_evaluate(self, listener: Callable[[T], None]) -> observer.Unregister:
-        ...
-
-    def on_evaluated(self, listener: Callable[[T, 'Score'], None]) -> observer.Unregister:
+    def evaluate(self) -> 'FunctionScore':
         ...
 
 
-Evaluator = Callable[[T], 'Score']
+type Evaluator[EvaluatorArg] = Callable[[EvaluatorArg], 'FunctionScore']
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-Skeleton = Callable
-type Score = float
+type Skeleton = Callable
+type FunctionScore = float
