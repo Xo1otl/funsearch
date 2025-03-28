@@ -29,6 +29,17 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 
 # TODO
 
+* MutationEngine の LLMに新しい関数考えてもらう部分
+* MutationEngine の LLM の出力から、新しく作られた関数の部分を普通に文字列としてとってくる処理
+* PythonAstSkeleton クラスで、文字列として得られた関数から実行用の__call__と__str__の実装をする
+* Evaluator をちゃんと作って誤差評価
+* island 内の cluster のボルツマン選択アルゴリズム
+* cluster 内の function の選択アルゴリズム (多分もう完成してる)
+
+# Memo
+
+inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
+
 最初のコメントとかのpromptの枠組みを含める処理をどこが担当するのか考える
 
 LLMがたくさん考えてくれる時は、レーベルシュタイン距離が一番遠いものを採用する

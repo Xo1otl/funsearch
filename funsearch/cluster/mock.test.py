@@ -6,15 +6,15 @@ import time
 
 
 def test_mock_cluster():
-    skeleton = function.MockPythonSkeleton()
+    mock_py_skeleton = function.MockPythonSkeleton()
 
-    def evaluator(arg: str):
+    def evaluator(skeleton: function.Skeleton, arg: str):
         time.sleep(1)
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(skeleton, "A" * 10, evaluator)
-    initial_fn = function.new_mock_function(props)
+    props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
+    initial_fn = function.new_default_function(props)
 
     def profile_engine_events(event: function.MutationEngineEvent):
         profiler.display_event(event)

@@ -5,15 +5,15 @@ import time
 
 def test_mock():
     # function の準備
-    skeleton = function.MockPythonSkeleton()
+    mock_py_skeleton = function.MockPythonSkeleton()
 
-    def evaluator(arg: str):
+    def evaluator(skeleton: function.Skeleton, arg: str):
         time.sleep(1)
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(skeleton, "A" * 10, evaluator)
-    functions = [function.new_mock_function(props) for _ in range(10)]
+    props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
+    functions = [function.new_default_function(props) for _ in range(10)]
 
     # engine の準備
     def profile_engine_events(event: function.MutationEngineEvent):

@@ -24,14 +24,12 @@ def format_value(value: Any) -> str:
         skeleton_fn = value.best_fn().skeleton
         if callable(skeleton_fn):
             sk = skeleton_fn()
-            if hasattr(sk, "source_code") and callable(sk.source_code):  # type: ignore
-                return format_source_code(sk.source_code())  # type: ignore
+            return format_source_code(str(sk))
     if hasattr(value, "skeleton"):
         skeleton_fn = value.skeleton
         if callable(skeleton_fn):
             sk = skeleton_fn()
-            if hasattr(sk, "source_code") and callable(sk.source_code):  # type: ignore
-                return format_source_code(sk.source_code())  # type: ignore
+            return format_source_code(str(sk))
     # ListまたはTupleの場合は各要素に対して再帰的にformat_valueを適用
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(format_value(item) for item in value) + "]"

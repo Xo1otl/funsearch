@@ -118,9 +118,9 @@ class MockCluster(Cluster):
         return self._signature
 
     def select_fn(self) -> function.Function:
-        # 各関数の skeleton() から __code__.co_code の長さを取得
+        # 各関数の skeleton() から ソースコードの長さを取得
         lengths = [
-            len(fn.skeleton().source_code()) for fn in self._functions
+            len(str(fn.skeleton())) for fn in self._functions
         ]
         # 最小値を引いて全体を正規化（最大値で割る）
         min_length = min(lengths)

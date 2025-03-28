@@ -51,11 +51,9 @@ type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[Evalua
 
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
+# TODO: これも generic にしたいが、さすがにだるくて半分あきらめてる
 class Skeleton(Protocol):
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        ...
-
-    def source_code(self) -> str:
         ...
 
 
@@ -84,5 +82,6 @@ class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Pr
         ...
 
 
-type Evaluator[EvaluatorArg] = Callable[[EvaluatorArg], 'FunctionScore']
+type Evaluator[EvaluatorArg] = Callable[[
+    Skeleton, EvaluatorArg], 'FunctionScore']
 type FunctionScore = float
