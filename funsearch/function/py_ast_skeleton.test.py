@@ -14,7 +14,7 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def multi_dim_skeleton(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, params: np.ndarray) -> np.ndarray:
+def multi_arg_skeleton(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, params: np.ndarray) -> np.ndarray:
     return params[0]*x1**2 + params[1]*x2**2 + params[2]*x3**2 + params[3]*x1*x2 + params[4]*x2*x3 + params[5]*x1*x3
 
 
@@ -46,9 +46,9 @@ def adam_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
 
 
 def test_py_ast_skeleton():
-    src = inspect.getsource(multi_dim_skeleton)
+    src = inspect.getsource(multi_arg_skeleton)
     py_ast_skeleton = function.PyAstSkeleton(src)
-    n = 20
+    n = 2000
     x1 = np.linspace(-2, 2, n)
     x2 = np.linspace(-1, 1, n)
     x3 = np.linspace(0, 3, n)

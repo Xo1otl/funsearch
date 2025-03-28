@@ -8,10 +8,10 @@ import scipy
 # 処理は LLM-SR の実装に従う
 # 1. 関数部分だけを取り出した text をもとに構成する
 # 2. ast.parse で関数をパースする
-# 3. docstring の下から return の前までを文字列 parse して body とする
+# 3. 元のコードではめちゃくちゃ頑張って docstring パースして戻すなどしていたけど多分無駄
 class PyAstSkeleton(Skeleton):
-    def __init__(self, def_fn_code: str):
-        node = ast.parse(def_fn_code)
+    def __init__(self, fn_code: str):
+        node = ast.parse(fn_code)
         code_obj = compile(node, filename="<ast>", mode="exec")
 
         # TODO: scipy の細かい関数なども名前空間に追加しといたほうがいいかも
@@ -27,7 +27,7 @@ class PyAstSkeleton(Skeleton):
 
         # コンパイル済みの名前空間から関数オブジェクトを取得し、引数をそのまま渡して実行します
         self._func = local_ns[func_name]
-        self._source_code = def_fn_code
+        self._source_code = fn_code
 
     def __call__(self, *args: Any, **kwargs: Any):
         return self._func(*args, **kwargs)

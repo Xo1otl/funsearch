@@ -2,13 +2,13 @@ from funsearch import function
 from typing import List, Callable
 
 
-def new_py_mutation_engine() -> function.MutationEngine:
+def new_mock_mutation_engine() -> function.MutationEngine:
     # TODO: LLM-SRのspecsと同様の設定ができるようにする
-    return PyMutationEngine()
+    return MockMutationEngine()
 
 
 # 例えば llm を使った engine を作りたい時 __init__ で prompt template を渡せるようにすればよい
-class PyMutationEngine(function.MutationEngine):
+class MockMutationEngine(function.MutationEngine):
     def __init__(self):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
