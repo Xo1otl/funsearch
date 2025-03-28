@@ -32,28 +32,27 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for acceleration in a damped nonlinear oscillator
+def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for shg efficiency
 
     Args:
-        x: A numpy array representing observations of current position.
-        v: A numpy array representing observations of velocity.
+        width: A numpy array representing periodic domain width
+        wavelength: A numpy array representing wavelength.
         params: Array of numeric constants or parameters to be optimized
 
     Return:
-        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+        A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.
     """
-    dv = params[0] * x + params[1] * v + params[2]
-    return dv
+    return params[0] * width + params[1] * wavelength
 
 
 def evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
-    x, v = inputs[:, 0], inputs[:, 1]
+    width, wavelength = inputs[:, 0], inputs[:, 1]
 
     def loss_fn(params):
-        return np.mean((skeleton(x, v, params) - outputs)**2)
+        return np.mean((skeleton(width, wavelength, params) - outputs)**2)
     grad_fn = jax.grad(loss_fn)
     optimizer = optax.adam(1e-2)
     init_params = np.ones(MAX_NPARAMS)
@@ -75,7 +74,8 @@ def test_py_mutation_engine():
     # function の準備
     src = inspect.getsource(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
-    df = pd.read_csv('../../data/oscillator1/train.csv')
+    df = pd.read_csv(
+        '/workspaces/mictlan/research/funsearch/data/npda/train.csv')
     data = np.array(df)
     inputs = data[:, :-1]
     outputs = data[:, -1].reshape(-1)
@@ -92,7 +92,7 @@ def test_py_mutation_engine():
 
     engine = llm.new_py_mutation_engine(
         prompt_comment="""
-Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
+Find the mathematical function skeleton that represents SHG efficiency in QPM devices.
 """,
         docstring=docstring or "",)
     engine.use_profiler(profile_engine_events)
@@ -107,7 +107,7 @@ Find the mathematical function skeleton that represents acceleration in a damped
     islands = cluster.generate_mock_islands(config)
     config = archipelago.EvolverConfig(
         islands=islands,
-        num_parallel=5,
+        num_parallel=3,
         reset_period=10 * 60
     )
 

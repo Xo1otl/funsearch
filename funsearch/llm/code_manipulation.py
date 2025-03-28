@@ -40,7 +40,7 @@ def remove_empty_lines(code: str) -> str:
 
 
 def set_fn_name(fn_code: str, version: int) -> str:
-    pattern = r"^(def\s+)\w+(\s*\(.*?\):)"
+    pattern = r"^(def\s+)\w+(\s*\(.*?\).*:)"
     new_name = f"equation_v{version}"
     new_fn_code = re.sub(pattern, rf"\1{new_name}\2", fn_code)
     return new_fn_code

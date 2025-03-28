@@ -46,10 +46,10 @@ class PyMutationEngine(function.MutationEngine):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
 
+    # FIXME: prompt templateになってるv0の引数情報の部分は、使用するskeletonによって違うため動的に生成しなければならない
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
-You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below, considering the physical meaning and relationships of inputs.
-        
+You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
 
 """{remove_empty_lines(self._prompt_comment)}"""
 
@@ -63,7 +63,7 @@ PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 {''.join(f"{remove_empty_lines(set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
-def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+def equation_v{len(skeletons)}(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ 
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
@@ -73,6 +73,7 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
 
     def _ask_llm(self, prompt: str) -> str:
         url = "http://ollama:11434/api/generate"
+        print(prompt)
         payload = {
             "prompt": prompt,
             "model": "gemma3:12b",
@@ -80,9 +81,7 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
             "options": {
-                "temperature": 1.0,
-                "top_k": 40,
-                "top_p": 0.8,
+                "temperature": 1,
             }
         }
         response = requests.post(url, json=payload)
@@ -90,8 +89,8 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         result = response.json()
         generated_text = result["response"]
         parsed_output = json.loads(generated_text)
-        new_function = parsed_output["new_function"]
-        return new_function
+        improved_equation = parsed_output["improved_equation"]
+        return improved_equation
 
     def _parse_answer(self, answer: str) -> str:
         answer = answer.replace('```', '')
@@ -110,4 +109,4 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
 
 
 class OllamaAnswer(BaseModel):
-    new_function: str
+    improved_equation: str
