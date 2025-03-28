@@ -32,27 +32,28 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation(strain: np.ndarray, temp: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for stress in Aluminium rod
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
 
     Args:
-        strain: A numpy array representing observations of strain.
-        temp: A numpy array representing observations of temperature.
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
         params: Array of numeric constants or parameters to be optimized
 
     Return:
-        A numpy array representing stress as the result of applying the mathematical function to the inputs.
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
     """
-    return params[0] * strain + params[1] * temp
+    dv = params[0] * x + params[1] * v + params[2]
+    return dv
 
 
 def evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
-    strain, temp = inputs[:, 0], inputs[:, 1]
+    x, v = inputs[:, 0], inputs[:, 1]
 
     def loss_fn(params):
-        return np.mean((skeleton(strain, temp, params) - outputs)**2)
+        return np.mean((skeleton(x, v, params) - outputs)**2)
     grad_fn = jax.grad(loss_fn)
     optimizer = optax.adam(1e-2)
     init_params = np.ones(MAX_NPARAMS)
@@ -74,8 +75,7 @@ def test_py_mutation_engine():
     # function の準備
     src = inspect.getsource(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
-    # TODO: ../../data/stressstrain/train.csv からデータを読み込む
-    df = pd.read_csv('../../data/stressstrain/train.csv')
+    df = pd.read_csv('../../data/oscillator1/train.csv')
     data = np.array(df)
     inputs = data[:, :-1]
     outputs = data[:, -1].reshape(-1)
@@ -92,13 +92,13 @@ def test_py_mutation_engine():
 
     engine = llm.new_py_mutation_engine(
         prompt_comment="""
-Find the mathematical function skeleton that represents stress, given data on strain and temperature in an Aluminium rod for both elastic and plastic regions.
+Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
 """,
         docstring=docstring or "",)
     engine.use_profiler(profile_engine_events)
 
     config = cluster.MockIslandsConfig(
-        num_islands=10,
+        num_islands=5,
         num_clusters=3,
         initial_fn=initial_fn,
         mutation_engine=engine,
@@ -112,7 +112,6 @@ Find the mathematical function skeleton that represents stress, given data on st
     )
 
     evolver = archipelago.spawn_mock_evolver(config)
-
     evolver.start()
 
 

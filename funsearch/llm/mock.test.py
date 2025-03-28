@@ -63,6 +63,7 @@ def test_parse():
         except Exception as e:
             print(f"Parsed failed: \n{demo_fn}")
             print(f"Error: {e}")
+            return
 
     print(f"All equations parsed successfully")
 

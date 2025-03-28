@@ -37,3 +37,39 @@ def remove_empty_lines(code: str) -> str:
     pattern = r'\n\s*\n'
     new_fn_code = re.sub(pattern, '\n', code)
     return new_fn_code
+
+
+def set_fn_name(fn_code: str, version: int) -> str:
+    pattern = r"^(def\s+)\w+(\s*\(.*?\):)"
+    new_name = f"equation_v{version}"
+    new_fn_code = re.sub(pattern, rf"\1{new_name}\2", fn_code)
+    return new_fn_code
+
+
+def fix_missing_def(code: str) -> str:
+    """
+    関数定義のヘッダーに 'def' キーワードや末尾のコロンが欠落している場合に補完する。
+    - 行頭のインデントを保持しつつ、関数名と引数リスト（さらにオプションで戻り値の型注釈）がある場合、
+      先頭に 'def ' を追加し、末尾に ':' がなければ追加する。
+    - 既に 'def' が存在する行は変更しない。
+    """
+    # パターンの説明:
+    # ^(?P<indent>\s*)           : 行頭のインデントをキャプチャ
+    # (?P<header>(?!def\s)\w+\(.*\)) : "def " で始まらない関数っぽいヘッダー（関数名と引数リスト）
+    # (?P<rest>.*)               : ヘッダーの残り（例：戻り値注釈など）
+    pattern = r"^(?P<indent>\s*)(?P<header>(?!def\s)\w+\(.*\))(?P<rest>.*)$"
+
+    def replacement(match: re.Match) -> str:
+        indent = match.group("indent")
+        header = match.group("header")
+        rest = match.group("rest")
+        fixed_line = f"{indent}def {header}{rest}"
+        # 末尾にコロンがなければ追加
+        if not fixed_line.rstrip().endswith(':'):
+            fixed_line += ':'
+        return fixed_line
+
+    # 1行目のみ補正対象
+    fixed_code = re.sub(pattern, replacement, code,
+                        count=1, flags=re.MULTILINE)
+    return fixed_code

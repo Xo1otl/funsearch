@@ -48,7 +48,7 @@ class PyMutationEngine(function.MutationEngine):
 
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
-You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below as valid Python code, considering the physical meaning and relationships of inputs.
+You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below, considering the physical meaning and relationships of inputs.
         
 
 """{remove_empty_lines(self._prompt_comment)}"""
@@ -61,7 +61,7 @@ MAX_NPARAMS = 10
 PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 
-{''.join(f"{remove_empty_lines(self._set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
+{''.join(f"{remove_empty_lines(set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
 def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ 
@@ -76,10 +76,13 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         payload = {
             "prompt": prompt,
             "model": "gemma3:12b",
+            # "model": "deepseek-coder-v2:latest",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
             "options": {
-                "temperature": 1,
+                "temperature": 1.0,
+                "top_k": 40,
+                "top_p": 0.8,
             }
         }
         response = requests.post(url, json=payload)
@@ -93,6 +96,7 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
     def _parse_answer(self, answer: str) -> str:
         answer = answer.replace('```', '')
         answer = fix_single_quote_line(answer)
+        answer = fix_missing_def(answer)
         pattern = r'^(def equation.*\(.*\).*:)'
         matches = list(re.finditer(pattern, answer, re.MULTILINE))
 
@@ -103,12 +107,6 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
             return result
         else:
             raise ValueError("no matching function found", answer)
-
-    def _set_fn_name(self, fn_code: str, version: int) -> str:
-        pattern = r"^(def\s+)\w+(\s*\(.*?\):)"
-        new_name = f"equation_v{version}"
-        new_fn_code = re.sub(pattern, rf"\1{new_name}\2", fn_code)
-        return new_fn_code
 
 
 class OllamaAnswer(BaseModel):

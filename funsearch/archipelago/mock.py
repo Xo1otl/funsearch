@@ -82,8 +82,9 @@ class MockEvolver(Evolver):
                     # In a mock, simply ignore mutation errors.
                     print(f"Error during mutation: {e}")
                     traceback.print_exc()
-                    exit(1)
-                    # continue
+                    # エラーを見たいので止めるようにする
+                    # self.stop()
+                    continue
                 # If this island now has a higher score than any previous best,
                 # update best_island and trigger the on_best_island_improved event.
                 if self.best_island is None or island.score() > self.best_island.score():
@@ -119,7 +120,7 @@ class MockEvolver(Evolver):
     def stop(self) -> None:
         # Signal the thread to stop and wait for it to finish.
         self.running = False
-        if self._thread is not None:
+        if self._thread is not None and threading.current_thread() != self._thread:
             self._thread.join()
 
     def use_profiler(self, profiler_fn):

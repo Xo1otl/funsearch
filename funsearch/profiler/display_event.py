@@ -39,18 +39,17 @@ def format_value(value: Any) -> str:
 
 def display_event(event: Event) -> None:
     base_message = f"Event: {event.type}"
-    detail_lines = []
+    if event.type == "on_mutated":
+        detail_lines = []
 
-    formatted = format_value(event.payload)
-    if "\n" in formatted:
-        detail_lines.append(
-            f"    Payload:\n{textwrap.indent(formatted, '        ')}")
+        formatted = format_value(event.payload)
+        if "\n" in formatted:
+            detail_lines.append(
+                f"    Payload:\n{textwrap.indent(formatted, '        ')}")
+        else:
+            detail_lines.append(f"    Payload: {formatted}")
+
+        complete_message = "\n".join([base_message] + detail_lines)
     else:
-        detail_lines.append(f"    Payload: {formatted}")
-
-    complete_message = "\n".join([base_message] + detail_lines)
+        complete_message = base_message
     logger.info(complete_message)
-
-# def display_event(event: Event) -> None:
-#     base_message = f"Event: {event.type}"
-#     logger.info(base_message)
