@@ -99,7 +99,7 @@ Find the mathematical function skeleton that represents SHG efficiency in QPM de
 
     config = cluster.MockIslandsConfig(
         num_islands=5,
-        num_clusters=3,
+        num_selected_clusters=3,
         initial_fn=initial_fn,
         mutation_engine=engine,
     )

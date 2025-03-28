@@ -10,7 +10,7 @@ from typing import List, Callable
 
 class MockIslandsConfig(NamedTuple):
     num_islands: int
-    num_clusters: int
+    num_selected_clusters: int
     initial_fn: function.Function
     mutation_engine: function.MutationEngine
 
@@ -20,7 +20,7 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
     islands: List[archipelago.Island] = []
     for _ in range(10):
         island = MockIsland(
-            config.initial_fn, initial_score, config.mutation_engine, config.num_clusters
+            config.initial_fn, initial_score, config.mutation_engine, config.num_selected_clusters
         )
 
         def profiler_fn(event: archipelago.IslandEvent):
@@ -32,19 +32,22 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
 
 
 class MockIsland(archipelago.Island):
-    def __init__(self, initial_fn: function.Function, initial_score: float, mutation_engine: function.MutationEngine, num_clusters: int):
+    def __init__(self, initial_fn: function.Function, initial_score: float, mutation_engine: function.MutationEngine, num_selected_clusters: int):
         self._best_fn = initial_fn
         self._score = initial_score
         self._mutation_engine = mutation_engine
         self._profilers: List[Callable[[archipelago.IslandEvent], None]] = []
-        self.num_clusters = num_clusters
+        self.num_selected_clusters = num_selected_clusters
         self.clusters: dict[str, Cluster] = {
             "A": spawn_mock_cluster(ClusterProps("A", initial_fn))}
 
     def _select_clusters(self) -> List[Cluster]:
-        # Select up to self.num_clusters clusters randomly from the available clusters
+        # Select up to self.num_selected_clusters clusters randomly from the available clusters
         available_clusters = list(self.clusters.values())
-        num_to_select = min(self.num_clusters, len(available_clusters))
+        num_to_select = min(
+            self.num_selected_clusters,
+            len(available_clusters)
+        )
         # TODO: ランダムになってるけど、cluster のスコアを使って ボルツマン分布作ってその確率分布に従って選ぶ
         selected_indices = onp.random.choice(
             len(available_clusters), num_to_select, replace=False)

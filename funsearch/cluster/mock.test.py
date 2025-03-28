@@ -24,7 +24,7 @@ def test_mock_cluster():
 
     config = cluster.MockIslandsConfig(
         num_islands=3,
-        num_clusters=3,
+        num_selected_clusters=3,
         initial_fn=initial_fn,
         mutation_engine=engine,
     )
