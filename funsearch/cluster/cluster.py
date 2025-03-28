@@ -24,6 +24,8 @@ class OnFnSelected(NamedTuple):
 type ClusterEvent = OnFnAdded | OnFnSelected
 
 
+# FIXME: どう考えてもスコアが必要な気がする、見落としてるのが逆に不思議なぐらいだから理由があったのかも、時間を開けて考え直してみる
+# Island の時と同様に add_fn で追加される fn のスコアが最高記録を更新したら自身のスコアをそれに更新する
 class Cluster(profiler.Pluggable[ClusterEvent], Protocol):
     def signature(self) -> 'Signature':
         ...

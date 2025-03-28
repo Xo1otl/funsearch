@@ -45,6 +45,7 @@ class MockIsland(archipelago.Island):
         # Select up to self.num_clusters clusters randomly from the available clusters
         available_clusters = list(self.clusters.values())
         num_to_select = min(self.num_clusters, len(available_clusters))
+        # TODO: ランダムになってるけど、cluster のスコアを使って ボルツマン分布作ってその確率分布に従って選ぶ
         selected_indices = onp.random.choice(
             len(available_clusters), num_to_select, replace=False)
         selected_clusters = [available_clusters[i] for i in selected_indices]
@@ -54,13 +55,14 @@ class MockIsland(archipelago.Island):
         # signature を決定して適切な Cluster に fn を追加する
         # mock での signature には雑に "A", "B", "C" の中からランダムに選んだ文字を使う
         # 本来は関数の score を使って signature を決定する (LLM-SRと同じ基準)
+        # TODO: fn の score() を読んでそれをそのまま signature にする (hashとかで)
+        # データセットに対するスコアのパターンが似てるもの同士まとめるだけなら round してもいい気がするけどとりあえず論文に従う
         signature = onp.random.choice(["A", "B", "C"])
         if signature not in self.clusters:
             self.clusters[signature] = spawn_mock_cluster(
                 ClusterProps(signature=signature, initial_fn=fn))
         else:
             self.clusters[signature].add_fn(fn)
-        ...
 
     def request_mutation(self):
         print("  -> mutation requested")
@@ -142,7 +144,7 @@ class MockCluster(Cluster):
         return selected_fn
 
     def add_fn(self, fn: function.Function):
-        # FIXME: スコアをsignatureにするので、取得してみてself._signatureと比較する
+        # FIXME: スコアを signature にするので、取得してみてself._signatureと比較する
         self._functions.append(fn)
         for profiler_fn in self._profilers:
             profiler_fn(OnFnAdded(type="on_fn_added", payload=fn))
