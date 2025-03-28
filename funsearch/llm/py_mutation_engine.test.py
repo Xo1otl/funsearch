@@ -90,6 +90,7 @@ def test_py_mutation_engine():
 
     docstring = inspect.getdoc(equation)
 
+    # ここの mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     engine = llm.new_py_mutation_engine(
         prompt_comment="""
 Find the mathematical function skeleton that represents SHG efficiency in QPM devices.
