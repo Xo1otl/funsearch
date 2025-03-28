@@ -33,7 +33,8 @@ def format_value(value: Any) -> str:
     # ListまたはTupleの場合は各要素に対して再帰的にformat_valueを適用
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(format_value(item) for item in value) + "]"
-    return str(value)
+    # return str(value)
+    return ""
 
 
 def display_event(event: Event) -> None:
@@ -49,3 +50,7 @@ def display_event(event: Event) -> None:
 
     complete_message = "\n".join([base_message] + detail_lines)
     logger.info(complete_message)
+
+# def display_event(event: Event) -> None:
+#     base_message = f"Event: {event.type}"
+#     logger.info(base_message)

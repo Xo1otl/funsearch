@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import requests
 import json
 import textwrap
+from .code_manipulation import *
 
 
 def new_py_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
@@ -50,7 +51,7 @@ class PyMutationEngine(function.MutationEngine):
 You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below as valid Python code, considering the physical meaning and relationships of inputs.
         
 
-"""{self._remove_empty_lines(self._prompt_comment)}"""
+"""{remove_empty_lines(self._prompt_comment)}"""
 
 import numpy as np
 import scipy
@@ -60,7 +61,7 @@ MAX_NPARAMS = 10
 PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 
-{''.join(f"{self._remove_empty_lines(self._set_fn_name(self._remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
+{''.join(f"{remove_empty_lines(self._set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
 def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ 
@@ -68,9 +69,6 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
     """
 '''
 
-        print("==" * 50)
-        print(prompt)
-        print("==" * 50)
         return prompt
 
     def _ask_llm(self, prompt: str) -> str:
@@ -80,6 +78,9 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
             "model": "gemma3:12b",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
+            "options": {
+                "temperature": 1,
+            }
         }
         response = requests.post(url, json=payload)
         response.raise_for_status()
@@ -91,6 +92,7 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
 
     def _parse_answer(self, answer: str) -> str:
         answer = answer.replace('```', '')
+        answer = fix_single_quote_line(answer)
         pattern = r'^(def equation.*\(.*\).*:)'
         matches = list(re.finditer(pattern, answer, re.MULTILINE))
 
@@ -100,27 +102,12 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
             result = answer[start_pos:]
             return result
         else:
-            print("=" * 50)
-            print(answer)
-            print("=" * 50)
             raise ValueError("no matching function found", answer)
 
     def _set_fn_name(self, fn_code: str, version: int) -> str:
         pattern = r"^(def\s+)\w+(\s*\(.*?\):)"
         new_name = f"equation_v{version}"
         new_fn_code = re.sub(pattern, rf"\1{new_name}\2", fn_code)
-        return new_fn_code
-
-    def _remove_docstring(self, fn_code: str) -> str:
-        # トリプルクォートのdocstring（シングル・ダブル両方）を削除
-        pattern = r'("""|\'\'\')(.*?)(\1)'
-        new_fn_code = re.sub(pattern, '', fn_code, flags=re.DOTALL)
-        return new_fn_code
-
-    def _remove_empty_lines(self, text: str) -> str:
-        # 空行を削除する正規表現
-        pattern = r'\n\s*\n'
-        new_fn_code = re.sub(pattern, '\n', text)
         return new_fn_code
 
 

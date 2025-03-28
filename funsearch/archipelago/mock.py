@@ -82,7 +82,8 @@ class MockEvolver(Evolver):
                     # In a mock, simply ignore mutation errors.
                     print(f"Error during mutation: {e}")
                     traceback.print_exc()
-                    continue
+                    exit(1)
+                    # continue
                 # If this island now has a higher score than any previous best,
                 # update best_island and trigger the on_best_island_improved event.
                 if self.best_island is None or island.score() > self.best_island.score():

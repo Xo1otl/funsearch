@@ -54,7 +54,7 @@ def evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     def loss_fn(params):
         return np.mean((skeleton(strain, temp, params) - outputs)**2)
     grad_fn = jax.grad(loss_fn)
-    optimizer = optax.adam(3e-4)
+    optimizer = optax.adam(1e-2)
     init_params = np.ones(MAX_NPARAMS)
     init_opt_state = optimizer.init(init_params)
 
@@ -65,7 +65,7 @@ def evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
         params = optax.apply_updates(params, updates)
         return (params, opt_state), None
     (final_params, _), _ = jax.lax.scan(
-        body_fn, (init_params, init_opt_state), None, length=10000)
+        body_fn, (init_params, init_opt_state), None, length=1000)
 
     return float(-loss_fn(final_params))
 
@@ -108,7 +108,7 @@ Find the mathematical function skeleton that represents stress, given data on st
     config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=5,
-        reset_period=60 * 60
+        reset_period=10 * 60
     )
 
     evolver = archipelago.spawn_mock_evolver(config)

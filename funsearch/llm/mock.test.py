@@ -52,7 +52,8 @@ Return:
 def test_parse():
     equations = [
         "def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:\n    ''' Mathematical function for acceleration in a damped nonlinear oscillator\n\n    Args:\n        x: A numpy array representing observations of current position.\n        v: A numpy array representing observations of velocity.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.\n    '''\n    k = params[0]  # Damping coefficient\n    c = params[1]  # Spring constant (if applicable)\n    F_t = params[2]  # Driving force, assumed constant for simplicity\n\n    dv = -k * x - c * v + F_t\n    return dv\n```",
-        "def equation(strain: np.ndarray, temp: np.ndarray, params: np.ndarray) -> np.ndarray:\n    E = params[0]  # Young's modulus\n    CTE = params[1]  # Coefficient of thermal expansion\n    stress = E * strain + CTE * temp\n    return stress"
+        "def equation(strain: np.ndarray, temp: np.ndarray, params: np.ndarray) -> np.ndarray:\n    E = params[0]  # Young's modulus\n    CTE = params[1]  # Coefficient of thermal expansion\n    stress = E * strain + CTE * temp\n    return stress",
+        'def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:\n   """\n   Mathematical function for stress in Aluminium rod\n\n   Args:\n       strain: A numpy array representing observations of strain.\n       temp: A numpy array representing observations of temperature.\n       params: Array of numeric constants or parameters to be optimized\n\n   Return:\n       A numpy array representing stress as the result of applying the mathematical function to the inputs.\n   "\n   stress = params[0] * x + params[1] * v\n   return stress'
     ]
     engine = llm.MockMutationEngine("", "")
     for demo_fn in equations:
