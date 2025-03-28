@@ -40,8 +40,39 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 
-最初のコメントとかのpromptの枠組みを含める処理をどこが担当するのか考える
-
 LLMがたくさん考えてくれる時は、レーベルシュタイン距離が一番遠いものを採用する
 
-LLM への送信や出力のパースなどを llm モジュールにまとめようかなと思うので、設計考える
+```
+"""
+Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
+"""
+
+
+import numpy as np
+import scipy
+
+#Initialize parameters
+MAX_NPARAMS = 10
+PRAMS_INIT = [1.0]*MAX_NPARAMS
+
+
+def equation_v0(x: np.ndarray, v: np.ndarray, params: np.ndarray):
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    dv = params[0] * x  +  params[1] * v  + params[2]
+    return dv
+
+
+
+def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Improved version of `equation_v0`.    """
+
+```

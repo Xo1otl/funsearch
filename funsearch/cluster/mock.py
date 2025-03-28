@@ -68,7 +68,9 @@ class MockIsland(archipelago.Island):
         sample_clusters = self._select_clusters()
         # TODO: MutationEngine に渡して新しい関数を生成する
         sample_fns = [cluster.select_fn() for cluster in sample_clusters]
+        # まずここに時間がかかる
         new_fn = self._mutation_engine.mutate(sample_fns)
+        # これも時間がかかる
         new_score = new_fn.evaluate()
         self._move_to_cluster(new_fn)
         if new_score > self._score:
