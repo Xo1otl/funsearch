@@ -4,17 +4,20 @@ import re
 from pydantic import BaseModel
 import requests
 import json
+import textwrap
 
 
-def new_mock_mutation_engine(prompt_comment: str) -> function.MutationEngine:
-    return MockMutationEngine(prompt_comment)
+def new_mock_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
+    # TODO: profilerの設定
+    return MockMutationEngine(prompt_comment, docstring)
 
 
 class MockMutationEngine(function.MutationEngine):
-    def __init__(self, prompt_comment: str):
+    def __init__(self, prompt_comment: str, docstring: str):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
         self._prompt_comment = prompt_comment
+        self._docstring = docstring
 
     def mutate(self, fn_list: List[function.Function]):
         for profiler_fn in self._profilers:
@@ -44,7 +47,7 @@ class MockMutationEngine(function.MutationEngine):
 
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
-You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below, considering the physical meaning and relationships of inputs.
+You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below as valid Python code, considering the physical meaning and relationships of inputs.
         
 
 """{self._remove_empty_lines(self._prompt_comment)}"""
@@ -60,27 +63,21 @@ PRAMS_INIT = [1.0] * MAX_NPARAMS
 {''.join(f"{self._remove_empty_lines(self._set_fn_name(self._remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
 def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for acceleration in a damped nonlinear oscillator
-    Args:
-        x: A numpy array representing observations of current position.
-        v: A numpy array representing observations of velocity.
-        params: Array of numeric constants or parameters to be optimized
-
-    Return:
-        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+{textwrap.indent(self._docstring.strip(), '    ')}
     """
 '''
 
-        print("==" * 20)
+        print("==" * 50)
         print(prompt)
-        print("==" * 20)
+        print("==" * 50)
         return prompt
 
     def _ask_llm(self, prompt: str) -> str:
         url = "http://ollama:11434/api/generate"
         payload = {
             "prompt": prompt,
-            "model": "deepseek-coder-v2:latest",
+            "model": "gemma3:12b",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
         }
@@ -93,7 +90,8 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         return new_function
 
     def _parse_answer(self, answer: str) -> str:
-        pattern = r'^(def equation_v.*\(.*\).*:)'
+        answer = answer.replace('```', '')
+        pattern = r'^(def equation.*\(.*\).*:)'
         matches = list(re.finditer(pattern, answer, re.MULTILINE))
 
         if matches:
@@ -102,7 +100,7 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
             result = answer[start_pos:]
             return result
         else:
-            raise ValueError("No matching function found.", answer)
+            raise ValueError("no matching function found", answer)
 
     def _set_fn_name(self, fn_code: str, version: int) -> str:
         pattern = r"^(def\s+)\w+(\s*\(.*?\):)"

@@ -38,6 +38,10 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 
 # Memo
 
+* 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる
+    * XLA_PYTHON_CLIENT_PREALLOCATE=false
+    * XLA_PYTHON_CLIENT_PREALLOCATE=0.01
+
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 
 LLMがたくさん考えてくれる時は、レーベルシュタイン距離が一番遠いものを採用する

@@ -12,9 +12,11 @@ import scipy
 # TODO: 関数名を変更できる必要がある
 class PyAstSkeleton(Skeleton):
     def __init__(self, fn_code: str):
-        print(fn_code)
-        node = ast.parse(fn_code)
-        code_obj = compile(node, filename="<ast>", mode="exec")
+        try:
+            node = ast.parse(fn_code)
+            code_obj = compile(node, filename="<ast>", mode="exec")
+        except SyntaxError as e:
+            raise ValueError("提供されたソースコードのパースに失敗しました", fn_code) from e
 
         # TODO: scipy の細かい関数なども名前空間に追加しといたほうがいいかも
         local_ns = {}
@@ -24,7 +26,7 @@ class PyAstSkeleton(Skeleton):
 
         # 関数定義（FunctionDef）であることを確認
         if not node.body or not isinstance(node.body[0], ast.FunctionDef):
-            raise ValueError("提供されたソースコードに関数定義が見つかりません。")
+            raise ValueError("提供されたソースコードに関数定義が見つかりません", fn_code)
         func_name = node.body[0].name
 
         # コンパイル済みの名前空間から関数オブジェクトを取得し、引数をそのまま渡して実行します
