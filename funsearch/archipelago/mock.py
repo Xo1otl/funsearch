@@ -47,7 +47,7 @@ class MockEvolver(Evolver):
         best_fn = best_island.best_fn()
         new_islands: List[Island] = [
             # skeleton も変えていないので clone された function ではスコアも保持されている
-            MockIsland(initial_fn=best_fn.clone(), initial_score=best_fn.score()) for _ in to_reset
+            MockIsland(initial_fn=best_fn.clone()) for _ in to_reset
         ]
 
         removed_islands = []
@@ -128,8 +128,9 @@ class MockEvolver(Evolver):
 
 
 def _generate_islands(config: IslandsConfig) -> List[Island]:
+    config.initial_fn.evaluate()
     islands: List[Island] = [
-        MockIsland(config.initial_fn, -float("inf")) for _ in range(config.num_islands)
+        MockIsland(config.initial_fn) for _ in range(config.num_islands)
     ]
     # TODO: 必要なlistenerの登録など
     return islands
@@ -139,9 +140,8 @@ generate_islands: GenerateIslands = _generate_islands
 
 
 class MockIsland(Island):
-    def __init__(self, initial_fn: function.Function, initial_score: function.FunctionScore):
+    def __init__(self, initial_fn: function.Function):
         self._best_fn = initial_fn
-        self._score = initial_score
         self._profilers: List[Callable[[IslandEvent], None]] = []
 
     def request_mutation(self):
@@ -151,9 +151,8 @@ class MockIsland(Island):
         new_fn = self._best_fn.clone(self._best_fn.skeleton())
         new_score = new_fn.evaluate()
         # score を見て new_fn を適切な cluster に移動する処理が必要だけど、それは cluster モジュールの cluster 依存の島で実装すればよい
-        if new_score > self._score:
+        if new_score > self._best_fn.score():
             # 最良の関数のスコアをそのまま島のスコアとする (LLM-SRと同じ基準)
-            self._score = new_score
             self._best_fn = new_fn
             for profiler_fn in self._profilers:
                 profiler_fn(OnBestFnImproved(
@@ -166,9 +165,6 @@ class MockIsland(Island):
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
-
-    def score(self) -> float:
-        return self._score
 
     def best_fn(self) -> function.Function:
         if self._best_fn is None:

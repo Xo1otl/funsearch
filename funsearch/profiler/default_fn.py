@@ -41,23 +41,19 @@ def format_value(value: Any) -> str:
     return ""
 
 
-# def default_fn(event: Event) -> None:
-#     base_message = f"Event: {event.type}"
-#     if event.type == "on_mutated":
-#         detail_lines = []
-
-#         formatted = format_value(event.payload)
-#         if "\n" in formatted:
-#             detail_lines.append(
-#                 f"    Payload:\n{textwrap.indent(formatted, '        ')}")
-#         else:
-#             detail_lines.append(f"    Payload: {formatted}")
-
-#         complete_message = "\n".join([base_message] + detail_lines)
-#     else:
-#         complete_message = base_message
-#     logger.info(complete_message)
-
-
 def default_fn(event: Event) -> None:
-    logger.info(f"Event: {event.type}")
+    base_message = f"Event: {event.type}"
+    if event.type == "on_best_island_improved":
+        detail_lines = []
+
+        formatted = format_value(event.payload)
+        if "\n" in formatted:
+            detail_lines.append(
+                f"    Payload:\n{textwrap.indent(formatted, '        ')}")
+        else:
+            detail_lines.append(f"    Payload: {formatted}")
+
+        complete_message = "\n".join([base_message] + detail_lines)
+    else:
+        complete_message = base_message
+    logger.info(complete_message)

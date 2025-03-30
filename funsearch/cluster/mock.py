@@ -15,11 +15,11 @@ class MockIslandsConfig(NamedTuple):
 
 
 def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]:
-    initial_score = config.initial_fn.evaluate()
+    config.initial_fn.evaluate()
     islands: List[archipelago.Island] = []
     for _ in range(10):
         island = MockIsland(
-            config.initial_fn, initial_score, config.mutation_engine, config.num_selected_clusters
+            config.initial_fn, config.mutation_engine, config.num_selected_clusters
         )
 
         island.use_profiler(profiler.default_fn)
@@ -28,9 +28,8 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
 
 
 class MockIsland(archipelago.Island):
-    def __init__(self, initial_fn: function.Function, initial_score: float, mutation_engine: function.MutationEngine, num_selected_clusters: int):
+    def __init__(self, initial_fn: function.Function, mutation_engine: function.MutationEngine, num_selected_clusters: int):
         self._best_fn = initial_fn
-        self._score = initial_score
         self._mutation_engine = mutation_engine
         self._profilers: List[Callable[[archipelago.IslandEvent], None]] = []
         self.num_selected_clusters = num_selected_clusters
@@ -61,7 +60,8 @@ class MockIsland(archipelago.Island):
             selected_indices = onp.random.choice(
                 len(available_clusters), size=num_to_select, replace=False, p=probabilities)
         except Exception as e:
-            abnormal_fns = [cluster.best_fn() for cluster, score in zip(available_clusters, scores) if not onp.isfinite(score)]
+            abnormal_fns = [cluster.best_fn() for cluster, score in zip(
+                available_clusters, scores) if not onp.isfinite(score)]
             raise Exception(
                 f"Error during cluster sampling. num_fns: {self._num_fns}. Abnormal fns: {abnormal_fns}"
             ) from e
@@ -91,8 +91,7 @@ class MockIsland(archipelago.Island):
         # これも時間がかかる
         new_score = new_fn.evaluate()
         self._move_to_cluster(new_fn)
-        if new_score > self._score:
-            self._score = new_score
+        if new_score > self._best_fn.score():
             self._best_fn = new_fn
             for profiler_fn in self._profilers:
                 profiler_fn(archipelago.OnBestFnImproved(
@@ -105,9 +104,6 @@ class MockIsland(archipelago.Island):
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
-
-    def score(self) -> float:
-        return self._score
 
     def best_fn(self) -> function.Function:
         if self._best_fn is None:
