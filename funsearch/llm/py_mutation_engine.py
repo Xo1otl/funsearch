@@ -70,7 +70,8 @@ def equation_v{len(skeletons)}(width: np.ndarray, wavelength: np.ndarray, params
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
     
-pythonとして正しく関数を実装し、関数全体をjson_fieldに格納してください。
+
+Implement the function correctly in Python and store the entire function in json field.
 '''
 
         return prompt
