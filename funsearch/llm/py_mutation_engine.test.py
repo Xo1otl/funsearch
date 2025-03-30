@@ -104,7 +104,7 @@ Find the mathematical function skeleton that represents SHG efficiency in QPM de
     config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=3,
-        reset_period=10 * 60
+        reset_period=50 * 60
     )
 
     evolver = archipelago.spawn_mock_evolver(config)

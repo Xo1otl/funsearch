@@ -55,7 +55,6 @@ class MockIsland(archipelago.Island):
         weights = onp.exp(scores / temperature)
 
         probabilities = weights / onp.sum(weights)
-
         selected_indices = onp.random.choice(
             len(available_clusters), size=num_to_select, replace=False, p=probabilities)
         selected_clusters = [available_clusters[i] for i in selected_indices]
@@ -141,6 +140,7 @@ class MockCluster(Cluster):
         # ソフトマックス計算： exp(logits) / sum(exp(logits))
         exp_logits = onp.exp(logits)
         probabilities = exp_logits / exp_logits.sum()
+
         # 上記確率に従って関数を選択
         selected_fn = onp.random.choice(
             self._functions, p=probabilities)  # type: ignore

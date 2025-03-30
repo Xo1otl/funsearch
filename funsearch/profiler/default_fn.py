@@ -2,9 +2,13 @@ import logging
 import textwrap
 from typing import Any
 from .domain import *
+import sys
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(threadName)s %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(threadName)s %(message)s',
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -37,19 +41,23 @@ def format_value(value: Any) -> str:
     return ""
 
 
+# def default_fn(event: Event) -> None:
+#     base_message = f"Event: {event.type}"
+#     if event.type == "on_mutated":
+#         detail_lines = []
+
+#         formatted = format_value(event.payload)
+#         if "\n" in formatted:
+#             detail_lines.append(
+#                 f"    Payload:\n{textwrap.indent(formatted, '        ')}")
+#         else:
+#             detail_lines.append(f"    Payload: {formatted}")
+
+#         complete_message = "\n".join([base_message] + detail_lines)
+#     else:
+#         complete_message = base_message
+#     logger.info(complete_message)
+
+
 def default_fn(event: Event) -> None:
-    base_message = f"Event: {event.type}"
-    if event.type == "on_mutated":
-        detail_lines = []
-
-        formatted = format_value(event.payload)
-        if "\n" in formatted:
-            detail_lines.append(
-                f"    Payload:\n{textwrap.indent(formatted, '        ')}")
-        else:
-            detail_lines.append(f"    Payload: {formatted}")
-
-        complete_message = "\n".join([base_message] + detail_lines)
-    else:
-        complete_message = base_message
-    logger.info(complete_message)
+    logger.info(f"Event: {event.type}")
