@@ -87,27 +87,30 @@ def test_py_mutation_engine():
     docstring = inspect.getdoc(equation)
 
     # ここの mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
-    engine = llm.new_py_mutation_engine(
+    mutation_engine = llm.new_py_mutation_engine(
         prompt_comment="""
 Find the mathematical function skeleton that represents SHG efficiency in QPM devices.
 """,
         docstring=docstring or "",)
+    num_selected_clusters = 2
 
-    config = cluster.MockIslandsConfig(
+    islands_config = cluster.MockIslandsConfig(
         num_islands=5,
-        num_selected_clusters=3,
+        num_selected_clusters=num_selected_clusters,
         initial_fn=initial_fn,
-        mutation_engine=engine,
+        mutation_engine=mutation_engine,
     )
 
-    islands = cluster.generate_mock_islands(config)
-    config = archipelago.EvolverConfig(
+    islands = cluster.generate_mock_islands(islands_config)
+    evolver_config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=3,
         reset_period=50 * 60
     )
 
-    evolver = archipelago.spawn_mock_evolver(config)
+    # FIXME: とりあえず同じの渡してるけどきれいな実装にする
+    evolver = cluster.Evolver(
+        evolver_config, mutation_engine=mutation_engine, num_selected_clusters=num_selected_clusters)
     evolver.start()
 
 
