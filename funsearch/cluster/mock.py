@@ -4,7 +4,6 @@ from funsearch import function
 from funsearch import archipelago
 from funsearch import profiler
 import numpy as onp
-import scipy
 from typing import List, Callable
 
 
@@ -23,10 +22,7 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
             config.initial_fn, initial_score, config.mutation_engine, config.num_selected_clusters
         )
 
-        def profiler_fn(event: archipelago.IslandEvent):
-            profiler.display_event(event)
-
-        island.use_profiler(profiler_fn)
+        island.use_profiler(profiler.default_fn)
         islands.append(island)
     return islands
 
@@ -40,38 +36,48 @@ class MockIsland(archipelago.Island):
         self.num_selected_clusters = num_selected_clusters
         self.clusters: dict[str, Cluster] = {
             "A": spawn_mock_cluster(ClusterProps("A", initial_fn))}
+        self._num_fns = 0
+        self._cluster_sampling_temperature_init = 0.1
+        self._cluster_sampling_temperature_period = 30_000
 
     def _select_clusters(self) -> List[Cluster]:
-        # Select up to self.num_selected_clusters clusters randomly from the available clusters
         available_clusters = list(self.clusters.values())
-        num_to_select = min(
-            self.num_selected_clusters,
-            len(available_clusters)
-        )
-        # TODO: ランダムになってるけど、cluster のスコアを使って ボルツマン分布作ってその確率分布に従って選ぶ
+        num_to_select = min(self.num_selected_clusters,
+                            len(available_clusters))
+
+        scores = onp.array([cluster.best_fn().score()
+                           for cluster in available_clusters])
+
+        period = self._cluster_sampling_temperature_period
+        temperature = self._cluster_sampling_temperature_init * \
+            (1 - (self._num_fns % period) / period)
+
+        weights = onp.exp(scores / temperature)
+
+        probabilities = weights / onp.sum(weights)
+
         selected_indices = onp.random.choice(
-            len(available_clusters), num_to_select, replace=False)
+            len(available_clusters), size=num_to_select, replace=False, p=probabilities)
         selected_clusters = [available_clusters[i] for i in selected_indices]
+
         return selected_clusters
 
     def _move_to_cluster(self, fn: function.Function):
-        # signature を決定して適切な Cluster に fn を追加する
-        # mock での signature には雑に "A", "B", "C" の中からランダムに選んだ文字を使う
         # 本来は関数の score を使って signature を決定する (LLM-SRと同じ基準)
-        # TODO: fn の score() を読んでそれをそのまま signature にする (hashとかで)
         # データセットに対するスコアのパターンが似てるもの同士まとめるだけなら round してもいい気がするけどとりあえず論文に従う
-        signature = onp.random.choice(["A", "B", "C"])
+        # TODO: 3 種類のデータセットに対して計算し、それぞれのスコアを並べたものが必要らしい、現在の実装では一個しか計算できないから、evaluate部分を修正する必要がある
+        signature = str(fn.score())
         if signature not in self.clusters:
             self.clusters[signature] = spawn_mock_cluster(
                 ClusterProps(signature=signature, initial_fn=fn))
         else:
             self.clusters[signature].add_fn(fn)
+        self._num_fns += 1
 
     def request_mutation(self):
         print("  -> mutation requested")
         time.sleep(3)
         sample_clusters = self._select_clusters()
-        # TODO: MutationEngine に渡して新しい関数を生成する
         sample_fns = [cluster.select_fn() for cluster in sample_clusters]
         # まずここに時間がかかる
         new_fn = self._mutation_engine.mutate(sample_fns)
@@ -106,7 +112,7 @@ def _spawn_mock_cluster(props: ClusterProps) -> Cluster:
     cluster = MockCluster(props)
 
     def profiler_fn(event: ClusterEvent):
-        profiler.display_event(event)
+        profiler.default_fn(event)
 
     cluster.use_profiler(profiler_fn)
     return cluster
@@ -125,21 +131,20 @@ class MockCluster(Cluster):
         return self._signature
 
     def select_fn(self) -> function.Function:
-        # 各関数の skeleton() から ソースコードの長さを取得
-        lengths = [
-            len(str(fn.skeleton())) for fn in self._functions
-        ]
-        # 最小値を引いて全体を正規化（最大値で割る）
-        min_length = min(lengths)
-        max_length = max(lengths)
-        normalized_lengths = (
-            onp.array(lengths) - min_length) / (max_length + 1e-6)
-        # 短い関数ほど高い確率になるように、符号を反転して softmax を適用
+        # 各関数の skeleton() からソースコードの長さを取得
+        lengths = onp.array([len(str(fn.skeleton()))
+                            for fn in self._functions])
+        # 最小の長さを引いて正規化する（各値を (length - min) / (max + 1e-6) に変換）
+        normalized_lengths = (lengths - lengths.min()) / (lengths.max() + 1e-6)
+        # 短い関数が選ばれやすくなるよう、正規化した値の負数を logits とする
         logits = -normalized_lengths
-        probabilities = scipy.special.softmax(logits, axis=0)
-        selected_fn_idx = onp.random.choice(
-            len(self._functions), p=probabilities)
-        selected_fn = self._functions[selected_fn_idx]
+        # ソフトマックス計算： exp(logits) / sum(exp(logits))
+        exp_logits = onp.exp(logits)
+        probabilities = exp_logits / exp_logits.sum()
+        # 上記確率に従って関数を選択
+        selected_fn = onp.random.choice(
+            self._functions, p=probabilities)  # type: ignore
+
         for profiler_fn in self._profilers:
             profiler_fn(OnFnSelected(
                 type="on_fn_selected", payload=(self._functions, selected_fn)
@@ -147,7 +152,7 @@ class MockCluster(Cluster):
         return selected_fn
 
     def add_fn(self, fn: function.Function):
-        # FIXME: スコアを signature にするので、取得してみてself._signatureと比較する
+        # 追加する関数の signature が一致するかどうかは、呼び出し側で確認
         self._functions.append(fn)
         for profiler_fn in self._profilers:
             profiler_fn(OnFnAdded(type="on_fn_added", payload=fn))
@@ -155,3 +160,6 @@ class MockCluster(Cluster):
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
+
+    def best_fn(self) -> function.Function:
+        return max(self._functions, key=lambda fn: fn.score())

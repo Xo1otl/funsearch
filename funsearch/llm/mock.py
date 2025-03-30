@@ -1,6 +1,6 @@
 from funsearch import function
+from funsearch import profiler
 from typing import List, Callable
-import re
 from pydantic import BaseModel
 import requests
 import json
@@ -9,8 +9,9 @@ from .code_manipulation import *
 
 
 def new_mock_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
-    # TODO: profilerの設定
-    return MockMutationEngine(prompt_comment, docstring)
+    engine = MockMutationEngine(prompt_comment, docstring)
+    engine.use_profiler(profiler.default_fn)
+    return engine
 
 
 class MockMutationEngine(function.MutationEngine):
@@ -32,7 +33,7 @@ class MockMutationEngine(function.MutationEngine):
         prompt = self._construct_prompt(skeletons)
         # これは時間がかかる処理
         answer = self._ask_llm(prompt)
-        fn_code = self._parse_answer(answer)
+        fn_code = self._parse_answer(answer, example=str(skeletons[0]))
         new_skeleton = function.PyAstSkeleton(fn_code)
         new_fn = fn_list[0].clone(new_skeleton)  # どれcloneしても構わん
         for profiler_fn in self._profilers:
@@ -87,21 +88,13 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         new_function = parsed_output["new_function"]
         return new_function
 
-    def _parse_answer(self, answer: str) -> str:
+    def _parse_answer(self, answer: str, example: str) -> str:
+        answer = extract_last_function(answer) # 失敗したらそのまま後続に渡される
         answer = answer.replace('```', '')
         answer = fix_single_quote_line(answer)
-        answer = fix_missing_def(answer)
-        pattern = r'^(def equation.*\(.*\).*:)'
-        matches = list(re.finditer(pattern, answer, re.MULTILINE))
-
-        if matches:
-            last_match = matches[-1]
-            start_pos = last_match.start()
-            result = answer[start_pos:]
-            return result
-        else:
-            raise ValueError("no matching function found", answer)
-
+        answer = fix_missing_header_and_ret(answer, example)
+        answer = fix_indentation(answer)
+        return answer
 
 class OllamaAnswer(BaseModel):
     new_function: str

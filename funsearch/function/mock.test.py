@@ -15,12 +15,7 @@ def test_mock():
     props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
     functions = [function.new_default_function(props) for _ in range(10)]
 
-    # engine の準備
-    def profile_engine_events(event: function.MutationEngineEvent):
-        profiler.display_event(event)
-
     engine = function.MockMutationEngine()
-    engine.use_profiler(profile_engine_events)
     engine.mutate(functions)
 
 

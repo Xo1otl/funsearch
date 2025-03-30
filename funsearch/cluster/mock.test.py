@@ -16,11 +16,8 @@ def test_mock_cluster():
     props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
     initial_fn = function.new_default_function(props)
 
-    def profile_engine_events(event: function.MutationEngineEvent):
-        profiler.display_event(event)
-
     engine = function.MockMutationEngine()
-    engine.use_profiler(profile_engine_events)
+    engine.use_profiler(profiler.default_fn)
 
     config = cluster.MockIslandsConfig(
         num_islands=3,

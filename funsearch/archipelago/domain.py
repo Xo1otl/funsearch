@@ -55,9 +55,6 @@ type IslandEvent = OnBestFnImproved
 
 
 class Island(profiler.Pluggable[IslandEvent], Protocol):
-    def score(self) -> 'IslandScore':
-        ...
-
     def best_fn(self) -> function.Function:
         ...
 
@@ -65,6 +62,3 @@ class Island(profiler.Pluggable[IslandEvent], Protocol):
     # これは、島の数だけ計算リソースが必要になることを避け、島を保持しながら余裕がある時だけ計算を呼び出すためである
     def request_mutation(self) -> function.Function:
         ...
-
-
-type IslandScore = float

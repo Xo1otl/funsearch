@@ -1,6 +1,7 @@
 from typing import Callable
 from funsearch import function
 from funsearch import profiler
+import sys
 from .domain import *
 import time
 import threading
@@ -9,11 +10,8 @@ import traceback
 
 
 def _spawn_mock_evolver(config: EvolverConfig) -> Evolver:
-    def profile_events(event: EvolverEvent):
-        profiler.display_event(event)
-
     evolver = MockEvolver(config)
-    evolver.use_profiler(profile_events)
+    evolver.use_profiler(profiler.default_fn)
     return evolver
 
 
@@ -33,10 +31,11 @@ class MockEvolver(Evolver):
 
     def _reset_islands(self):
         # 一番良い島を取得
-        best_island = max(self.islands, key=lambda island: island.score())
+        best_island = max(
+            self.islands, key=lambda island: island.best_fn().score())
         # 島をスコアの低い順に並べ替える
         sorted_islands = sorted(
-            self.islands, key=lambda island: island.score())
+            self.islands, key=lambda island: island.best_fn().score())
         num_to_reset = len(sorted_islands) // 2
         if num_to_reset == 0:
             return
@@ -80,14 +79,14 @@ class MockEvolver(Evolver):
                     _ = future.result()
                 except Exception as e:
                     # In a mock, simply ignore mutation errors.
-                    print(f"Error during mutation: {e}")
+                    print(f"Error during mutation: {e}", file=sys.stderr)
                     traceback.print_exc()
                     # エラーを見たいので止めるようにする
                     # self.stop()
                     continue
                 # If this island now has a higher score than any previous best,
                 # update best_island and trigger the on_best_island_improved event.
-                if self.best_island is None or island.score() > self.best_island.score():
+                if self.best_island is None or island.best_fn().score() > self.best_island.best_fn().score():
                     self.best_island = island
                     for profiler_fn in self._profilers:
                         profiler_fn(OnBestIslandImproved(
@@ -151,7 +150,7 @@ class MockIsland(Island):
         # evaluate するには skeleton を置き換えて score をリセットする必要がある
         new_fn = self._best_fn.clone(self._best_fn.skeleton())
         new_score = new_fn.evaluate()
-        # TODO: score を見て new_fn を適切な cluster に移動する処理が必要
+        # score を見て new_fn を適切な cluster に移動する処理が必要だけど、それは cluster モジュールの cluster 依存の島で実装すればよい
         if new_score > self._score:
             # 最良の関数のスコアをそのまま島のスコアとする (LLM-SRと同じ基準)
             self._score = new_score

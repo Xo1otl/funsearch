@@ -1,4 +1,5 @@
 from funsearch import function
+from funsearch import profiler
 from typing import List, Callable
 import re
 from pydantic import BaseModel
@@ -9,8 +10,9 @@ from .code_manipulation import *
 
 
 def new_py_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
-    # TODO: profilerの設定
-    return PyMutationEngine(prompt_comment, docstring)
+    engine = PyMutationEngine(prompt_comment, docstring)
+    engine.use_profiler(profiler.default_fn)
+    return engine
 
 
 class PyMutationEngine(function.MutationEngine):
@@ -32,7 +34,7 @@ class PyMutationEngine(function.MutationEngine):
         prompt = self._construct_prompt(skeletons)
         # これは時間がかかる処理
         answer = self._ask_llm(prompt)
-        fn_code = self._parse_answer(answer)
+        fn_code = self._parse_answer(answer, str(skeletons[0]))
         new_skeleton = function.PyAstSkeleton(fn_code)
         new_fn = fn_list[0].clone(new_skeleton)  # どれcloneしても構わん
         for profiler_fn in self._profilers:
@@ -67,13 +69,14 @@ def equation_v{len(skeletons)}(width: np.ndarray, wavelength: np.ndarray, params
     """ 
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
+    
+pythonとして正しく関数を実装し、関数全体をjson_fieldに格納してください。
 '''
 
         return prompt
 
     def _ask_llm(self, prompt: str) -> str:
         url = "http://ollama:11434/api/generate"
-        print(prompt)
         payload = {
             "prompt": prompt,
             "model": "gemma3:12b",
@@ -92,20 +95,13 @@ def equation_v{len(skeletons)}(width: np.ndarray, wavelength: np.ndarray, params
         improved_equation = parsed_output["improved_equation"]
         return improved_equation
 
-    def _parse_answer(self, answer: str) -> str:
+    def _parse_answer(self, answer: str, example: str) -> str:
+        answer = extract_last_function(answer)  # 失敗したらそのまま後続に渡される
         answer = answer.replace('```', '')
         answer = fix_single_quote_line(answer)
-        answer = fix_missing_def(answer)
-        pattern = r'^(def equation.*\(.*\).*:)'
-        matches = list(re.finditer(pattern, answer, re.MULTILINE))
-
-        if matches:
-            last_match = matches[-1]
-            start_pos = last_match.start()
-            result = answer[start_pos:]
-            return result
-        else:
-            raise ValueError("no matching function found", answer)
+        answer = fix_missing_header_and_ret(answer, example)
+        answer = fix_indentation(answer)
+        return answer
 
 
 class OllamaAnswer(BaseModel):

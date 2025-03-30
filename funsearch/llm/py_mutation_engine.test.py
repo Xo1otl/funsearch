@@ -84,10 +84,6 @@ def test_py_mutation_engine():
         py_ast_skeleton, evaluator_arg, evaluator)
     initial_fn = function.new_default_function(function_props)
 
-    # engine の準備
-    def profile_engine_events(event: function.MutationEngineEvent):
-        profiler.display_event(event)
-
     docstring = inspect.getdoc(equation)
 
     # ここの mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
@@ -96,7 +92,6 @@ def test_py_mutation_engine():
 Find the mathematical function skeleton that represents SHG efficiency in QPM devices.
 """,
         docstring=docstring or "",)
-    engine.use_profiler(profile_engine_events)
 
     config = cluster.MockIslandsConfig(
         num_islands=5,

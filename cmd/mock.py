@@ -17,7 +17,7 @@ def test_mock_cluster():
     initial_fn = function.new_default_function(props)
 
     def profile_engine_events(event: function.MutationEngineEvent):
-        profiler.display_event(event)
+        profiler.default_fn(event)
 
     engine = function.MockMutationEngine()
     engine.use_profiler(profile_engine_events)

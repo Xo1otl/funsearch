@@ -37,7 +37,7 @@ def format_value(value: Any) -> str:
     return ""
 
 
-def display_event(event: Event) -> None:
+def default_fn(event: Event) -> None:
     base_message = f"Event: {event.type}"
     if event.type == "on_mutated":
         detail_lines = []

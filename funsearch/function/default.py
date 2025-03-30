@@ -1,14 +1,11 @@
 from .domain import *
+from funsearch import profiler
 import copy
 
 
 def new_default_function[EvaluatorArg](props: FunctionProps[EvaluatorArg]) -> Function[EvaluatorArg]:
     fn = DefaultFunction(props)
-
-    def profile_events(event: FunctionEvent[EvaluatorArg]):
-        profiler.display_event(event)
-
-    fn.use_profiler(profile_events)
+    fn.use_profiler(profiler.default_fn)
     return fn
 
 
