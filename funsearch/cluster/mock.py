@@ -42,8 +42,10 @@ class MockIsland(archipelago.Island):
 
     def _select_clusters(self) -> List[Cluster]:
         available_clusters = list(self.clusters.values())
-        num_to_select = min(self.num_selected_clusters,
-                            len(available_clusters))
+        num_to_select = min(
+            self.num_selected_clusters,
+            len(available_clusters)
+        )
 
         scores = onp.array([cluster.best_fn().score()
                            for cluster in available_clusters])
@@ -55,8 +57,14 @@ class MockIsland(archipelago.Island):
         weights = onp.exp(scores / temperature)
 
         probabilities = weights / onp.sum(weights)
-        selected_indices = onp.random.choice(
-            len(available_clusters), size=num_to_select, replace=False, p=probabilities)
+        try:
+            selected_indices = onp.random.choice(
+                len(available_clusters), size=num_to_select, replace=False, p=probabilities)
+        except Exception as e:
+            abnormal_fns = [cluster.best_fn() for cluster, score in zip(available_clusters, scores) if not onp.isfinite(score)]
+            raise Exception(
+                f"Error during cluster sampling. num_fns: {self._num_fns}. Abnormal fns: {abnormal_fns}"
+            ) from e
         selected_clusters = [available_clusters[i] for i in selected_indices]
 
         return selected_clusters
