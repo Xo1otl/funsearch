@@ -227,6 +227,15 @@ Using GPU: cuda:0
             """
             acceleration = params[0] + params[1] * v + params[2] * x + params[3] * x * v + params[4] * x**2 + params[5] * x**3
             return acceleration
+
+2025-03-31 15:12:19,131 ThreadPoolExecutor-50_0 Event: on_evaluated
+  -> mutation done with score -6.845196973396621e-06
+2025-03-31 15:12:19,131 Thread-2 (_run) Event: on_best_island_improved
+    Payload:
+
+        def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+            acceleration = params[0] + params[1] * v - params[2] * x + params[3] * x * v - params[4] * x**2 * np.sin(x)
+            return acceleration
 ```
 
 結構すぐいい線いってる式が見つかったっぽい、回数を出力してないから無理やり数えないとわからん、明日はProfilerをちゃんと作る
