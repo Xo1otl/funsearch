@@ -55,3 +55,9 @@ class DefaultFunction(Function):
             cloned_function._skeleton = new_skeleton
             cloned_function._score = None
         return cloned_function
+
+    def signature(self):
+        # 本来は関数の score を使って signature を決定する (LLM-SRと同じ基準)
+        # データセットに対するスコアのパターンが似てるもの同士まとめるだけなら round してもいい気がするけどとりあえず論文に従う
+        # TODO: 3 種類のデータセットに対して計算し、それぞれのスコアを並べたものが必要らしい、現在の実装では一個しか計算できないから、evaluate部分を修正する必要がある
+        return str(self.score())

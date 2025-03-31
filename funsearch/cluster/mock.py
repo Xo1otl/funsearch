@@ -34,7 +34,7 @@ class MockIsland(archipelago.Island):
         self._profilers: List[Callable[[archipelago.IslandEvent], None]] = []
         self.num_selected_clusters = num_selected_clusters
         self.clusters: dict[str, Cluster] = {
-            "A": spawn_mock_cluster(ClusterProps("A", initial_fn))}
+            initial_fn.signature(): spawn_mock_cluster(ClusterProps(initial_fn))}
         self._num_fns = 0
         self._cluster_sampling_temperature_init = 0.1
         self._cluster_sampling_temperature_period = 30_000
@@ -70,13 +70,10 @@ class MockIsland(archipelago.Island):
         return selected_clusters
 
     def _move_to_cluster(self, fn: function.Function):
-        # 本来は関数の score を使って signature を決定する (LLM-SRと同じ基準)
-        # データセットに対するスコアのパターンが似てるもの同士まとめるだけなら round してもいい気がするけどとりあえず論文に従う
-        # TODO: 3 種類のデータセットに対して計算し、それぞれのスコアを並べたものが必要らしい、現在の実装では一個しか計算できないから、evaluate部分を修正する必要がある
-        signature = str(fn.score())
+        signature = fn.signature()
         if signature not in self.clusters:
             self.clusters[signature] = spawn_mock_cluster(
-                ClusterProps(signature=signature, initial_fn=fn))
+                ClusterProps(initial_fn=fn))
         else:
             self.clusters[signature].add_fn(fn)
         self._num_fns += 1
@@ -126,7 +123,7 @@ spawn_mock_cluster: SpawnCluster = _spawn_mock_cluster
 
 class MockCluster(Cluster):
     def __init__(self, props: ClusterProps) -> None:
-        self._signature = props.signature
+        self._signature = props.initial_fn.signature()
         self._functions = [props.initial_fn]
         self._profilers: List[Callable[[ClusterEvent], None]] = []
 

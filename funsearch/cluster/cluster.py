@@ -4,7 +4,6 @@ from funsearch import profiler
 
 
 class ClusterProps(NamedTuple):
-    signature: 'Signature'
     initial_fn: function.Function
 
 
@@ -25,17 +24,14 @@ type ClusterEvent = OnFnAdded | OnFnSelected
 
 
 class Cluster(profiler.Pluggable[ClusterEvent], Protocol):
-    def signature(self) -> 'Signature':
-        ...
-
     def add_fn(self, fn: function.Function):
         ...
 
+    # サンプリングの時に必要
     def select_fn(self) -> function.Function:
         ...
 
+    # 移住の時に必要
     def best_fn(self) -> function.Function:
         ...
 
-
-type Signature = str

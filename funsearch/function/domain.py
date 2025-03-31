@@ -58,6 +58,9 @@ class Skeleton(Protocol):
 
 
 class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Protocol):
+    def signature(self) -> 'Signature':
+        ...
+
     def score(self) -> 'FunctionScore':
         ...
 
@@ -85,3 +88,5 @@ class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Pr
 type Evaluator[EvaluatorArg] = Callable[[
     Skeleton, EvaluatorArg], 'FunctionScore']
 type FunctionScore = float
+
+type Signature = str
