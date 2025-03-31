@@ -48,7 +48,6 @@ class PyMutationEngine(function.MutationEngine):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
 
-    # FIXME: prompt templateになってるv0の引数情報の部分は、使用するskeletonによって違うため動的に生成しなければならない
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
 You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
@@ -65,7 +64,7 @@ PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 {''.join(f"{remove_empty_lines(set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
-def equation_v{len(skeletons)}(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
+def equation_v{len(skeletons)}({extract_fn_header(str(skeletons[0]))}) -> np.ndarray:
     """ 
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
@@ -81,7 +80,7 @@ Implement the function correctly in Python and store the entire function in json
         payload = {
             "prompt": prompt,
             "model": "gemma3:12b",
-            # "model": "deepseek-coder-v2:latest",
+            # "model": "qwen2.5-coder:14b",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
             "options": {
@@ -102,6 +101,7 @@ Implement the function correctly in Python and store the entire function in json
         answer = fix_single_quote_line(answer)
         answer = fix_missing_header_and_ret(answer, example)
         answer = fix_indentation(answer)
+        answer = fix_wrong_escape(answer)
         return answer
 
 

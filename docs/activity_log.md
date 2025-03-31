@@ -1,0 +1,243 @@
+# 3月21日
+
+## タイトルやアブストからドメインを明確にしていった
+```
+これってタイトル的に<タイトルに書かれている対象>について機械学習でなんかしようという内容に見受けられるけど、結局どんな感じのデータからどんな感じのデータを計算したいんだろうか。手法はいったんおいといて、ドメインをはっきりさせたい
+```
+
+## LLM-SRに決めた
+* interatomic: 原子間距離とかポテンシャルエネルギー面を理解してデータセット作るところからだし、機械学習もGNN等高度なモデルを使ってて時間なさそう
+* heterogeneous: 不均一触媒についてなもしらん、単一の材料に対する手法の研究というより、様々な材料への適用の評価や比較である。化学の背景知識揃える必要ある参考文献230件あるデータセット作って様々な評価方法を行う時間はない
+* LLM-SR: Symbolic Regressionだけど数理的なアルゴリズム控え目で、LLMに丸投げしてる部分がある、ほぼAgent作りでやりやすそう。ソースコードついてる。動作確認とれた
+
+## LLM-SRに取り組む
+* LLM-SRを理解しつつ、ソースコードをリファクタリングすることに決めた
+* **jaxにしたらnumpy&Adam的なことができるし一番高速**
+* **ollama使う設計にしたい(GPTでやると普通に高い)**
+* いつもはインターフェースを書いてGPTに実装してもらってるけど、同じ手法を組み込めないか考える
+
+## LLM-SRのコードと論文解読
+* 論文に評価後の図が合ってそれらの出力方法がわからん
+
+## 問題の要件の整理
+* 従来との違いやアプローチの新しさの整理(新規性)の説明が必要
+* 自分の研究テーマとの関連、適用可能性
+    * 興味ある範囲への適用可能性も
+* 検証のための実装
+    * 実装一辺倒にならないように、説明の文章もちゃんと考えていく
+    * どの部分に着目してどのような検証を行ったのか明確にする
+        * 局所最適解に陥らないためにisland化が必要だとおもってそこがちゃんとできること確認
+        * PySRとの精度比較
+        
+## Adamどこでつかってんのかしらべた
+* 関数の形状だけ学習させて、係数の部分はAdamで同定してるっぽい
+
+## 進化的アルゴリズムの勉強が大事な気がしてる
+
+# 3月22日
+
+## 昨日放置した結果確認
+![一日放置した結果](image.png)
+gemma:12bで試したところ10e-6まで下がっている。ちゃんと探索がうまくいっていてすごい。
+
+## 自分の研究への適用可能性
+課題にかかれていた考察事項を考えてみたところ、この手法が自分の研究テーマに直接的に直接的に有効であることがわかった
+
+実際に自分の研究に使用して結果を提出するのもいいかなと思うけど二週間なのがきつい、あと論文の説明と実装がメインテーマなのでそっちに集中しよう
+
+## コピー元があった
+https://github.com/google-deepmind/funsearch
+
+LLM-SRはこれのコピペ実装
+
+原文の方が島モデルの解説がわかりやすい
+
+signatureはテストケースに対するスコアパターンから計算されている、clusterはislandの中で
+
+reactみたいにかくなら、useCluster と useIsland の二つのcontextが必要になる？
+
+## 要点をまとめてみた
+
+* 進化的アルゴリズム: island
+
+* 関数スケルトン変異アルゴリズム: LLM
+
+* 関数スケルトンの誤差評価アルゴリズム: 二乗誤差で定義されたLossをAdamでオプティマイズした結果
+
+* サンプリングアルゴリズム: ボルツマン選択
+
+**注意ポイント: islandモデル割とムズイからちゃんと理解する、係数は評価の中で動的に決定される前提であり、係数を含まない関数スケルトンを同定する**
+
+## 新規性をまとめる
+
+アルゴリズム自体に新規性はない、FunSearchのほぼ丸パクリ
+
+関数同定の分野では従来は構文木を用いた同定が主流、例えばPySRとの比較での新規性では、構文木の代わりにprogramを使用し、サブツリー変異の代わりにLLMの考えを使っており、性能の向上も示している。探索空間が構文木の時より大きいことを主張している
+
+FunSearchではアルゴリズムの探索をしている。LLM-SRは数式の探索に着目している。
+
+LLM-SRでは、コンテキストを与えたときに一発で正解に近い数式をくれる可能性を数値化したPPLと呼ばれる指標を使った評価を行い、LLMが初めからもっている知識に依存せずに、新しい関数を考え出すことに成功していることを示している点が特に新しい。
+
+PPLと、モデルを用いた探索の収束の最終的な精度や速度、との関係を明らかにしたらおもしろそう
+
+# 3月23日
+
+なもしてない
+
+# 3月24日
+
+samplerやexperience bufferなど、スコープがよくわからんクラスについても把握できてきた
+
+```
+Archipelago (群島)
+  └── Island (島)
+       ├── Laboratory (研究所) - クラスタ選別と進化戦略を担当
+       │    └── ClusterSelector - クラスタ選択ロジック
+       │    └── MutationEngine - 変異生成ロジック
+       └── Cluster (クラスタ)
+            └── Function (関数)
+```
+
+フルスクラッチの前に、まず一回PoCを使って公式の発見を行ってみたい
+
+NPDAを発見できるか試してみようと思う、計算を回している
+
+# 3月25日
+
+funsearchとしてフルスクラッチすることにしたので[リポジトリ](https://github.com/Xo1otl/funsearch)を作った
+
+submoduleのあれこれのときにミスってqunasysの結果を吹き飛ばした、スコアは2.8だったのが0.59ぐらいまで下がっていた、式が消えてマジで悲しい
+
+# 3月26日
+
+specsに多少ヒントを追加して探索したところ、ドンピシャな公式が発見されていた。
+
+```
+{"sample_order": 6631, "function": "def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:\n    \"\"\" Mathematical function for shg efficiency\n\n    Args:\n        width: A numpy array representing periodic domain width\n        wavelength: A numpy array representing wavelength.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.\n        \"\"\"\n    # Scaling factor for the domain width.  This accounts for variations in the poling period.\n    dw_scaling = params[0] + params[1] / wavelength\n\n    # Calculate the effective domain width.\n    effective_width = width * dw_scaling\n\n    # Total length of the QPM device.  This is determined by the number of domains and the effective width.\n    L = params[2] * effective_width\n\n    # Grating vector.  This is related to the poling period and the wavelength.\n    k_g = params[3]\n\n    # Phase mismatch calculation.  This is the difference between the phase of the fundamental wave and the phase of the second harmonic wave.\n    delta_k = k_g + params[4] - np.pi / effective_width\n\n    # Argument for the sinc^2 function.\n    arg = delta_k * L / 2\n\n    # SHG efficiency calculation. The sinc^2 function is the key element.\n    # The constant factor (params[5]) scales the overall efficiency.\n    # The denominator (arg**2 + params[6]**2) introduces a damping factor that broadens the peak.\n    efficiency = params[5] * L**2 * np.sin(arg)**2 / (arg**2 + params[6]**2)\n\n    # Damping factor to account for losses and imperfections.\n    # This is a polynomial function of the phase mismatch.\n    damping_factor = 2 + params[7] * arg + params[8] * arg**2\n\n    # Apply the damping factor to the efficiency.\n    efficiency = efficiency / damping_factor\n\n    return efficiency", "score": -0.06745296165713882}
+```
+
+NPDAを用いない数値解法から得たデータセットを使って、NPDAの公式 (しかもphase_mismatchではなく波長をとしている) が発見された
+
+つまり、一定周期分極反転構造における変換効率の解析的な解放をデータセットから、AI (Gemma3:12b) が自力で発見できることがわかった
+
+結果の確認以外なんもやってない
+
+# 3月27日
+
+* 設計の続きをやろうと思う
+    * add_event_listener と generics で置き換えたい
+    * evolverはclusterに依存していない。clusterモジュールを作ってそっちにclustered islandみたいにしようかな
+    
+* おおまかな処理の流れの部分を実装して mock を完成させた、あとは以下を実装する
+    * MutationEngine の LLMに新しい関数考えてもらう部分
+    * MutationEngine の LLM の出力を 実行可能コードに parse する部分
+    * Evaluator をちゃんと作って誤差評価
+    * island 内の cluster のボルツマン選択アルゴリズム
+    * cluster 内の function の選択アルゴリズム (多分もう完成してる)
+    
+# 3月28日
+
+* skeleton の形式を変更した、とりあえず実装の一つとしてpython skeletonを作る
+    `code_manipulation.py`
+    ```python
+            self._functions.append(Function(
+                name=node.name,
+                args=ast.unparse(node.args),
+                return_type=ast.unparse(
+                    node.returns) if node.returns else None,
+                docstring=docstring,
+                body='\n'.join(
+                    self._codelines[body_start_line:function_end_line]),
+            ))
+    ```
+    
+* skeleton 完成してテストもできた、numpy 使いつつ adam オプティマイザで gpu だから爆速
+* llm.MutationEngine を作る、まずは mock から
+* evaluate を jax にしたら爆速になったが、GPU使い果たしててパソコンから音が鳴るので心配
+* MutationEngine でのパースと evaluate が完成した
+* island の cluster のボルツマン選択と cluster の function の選択アルゴリズム確認したら終わり
+
+## TODO
+* cluster もスコアがないと island でクラスタのボルツマン分布が得られない
+* cluster の signature が現在ランダムな文字になってる、ここをスコアの hash などにする
+* island の中で cluster のボルツマン選択を行う
+* cluster の中で fn を選ぶ処理は、長さを重みとした softmax で選んでて多分完成してる
+* 実際のデータで探索を試す、その際ログの出力をより整理する、今はログとりすぎ。あとは普通にミスがないか見直しを行う
+* LLM のパースの漏れがまだ結構あるから、バグったやつ情報収集して原因を特定する
+* ファクトリ関数を整理したりなどのリファクタリングを行う、論文通りのロジックができているか見直しを行う
+* mcp で AI から呼び出せるようにしてみようかなとか考えた
+
+# 3月29日
+
+休憩
+
+# 3月30日
+
+島でのクラスタのボルツマン分布を使った選択と、クラスタでの関数選択アルゴリズム書いて reset で再生成されるのが mock になってたの直した
+
+# 3月31日
+
+docker をアプデしたら起動しなくなり devcontainer を作り直した
+
+データセット一つに対してしか evaluate 出来ない現在の仕様を、３つに対しても evaluate できるように変更する必要がある
+
+- **train** はモデルが学習するデータ、
+- **id** は学習データと同様の性質を持ち、モデルの基本的な性能を評価するためのデータ、
+- **ood** はモデルの一般化能力やロバスト性を評価するための、未知または異なる分布を持つデータセットです。
+
+3種類に分けて、同時に評価してスコアパターンの完全一致でクラスタリングして、比較ではその平均を使う
+
+まえから思ってたけど完全一致ってほぼ発生しないから、全部くっつけた一個のデータセットでやるのとなんも変わらん気がする
+
+とりあえず自分のコードのテストのために、全部一個にまとめたデータセットで探索試そうと思う、それでも行ける気がしている
+
+その前にもうちょい使いやすいようにリファクタリングを行う。現状では mock 書いてたら完成してたからそのままテストコードでやっている
+
+signature は cluster が持つのではなく function が持つべきな気がしてきたし score と分けることで柔軟な設計ができそう
+
+パッションで adam 使ってみようとしてたけど bfgs のほうが圧倒的に精度よかったので numpy + bfgs のほうが良い結果でるの自明で草
+
+結局3つのデータセットで計算してパターンをシグネチャにするようにできたので、一番カンタンそうなoscillator試す
+
+```
+2025-03-31 14:16:39,025 MainThread Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2025-03-31 14:16:39,026 MainThread Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directo
+ry
+Using GPU: cuda:0
+2025-03-31 14:16:39,453 MainThread Event: on_evaluate
+2025-03-31 14:16:44,374 MainThread Event: on_evaluated
+
+(省略)
+
+  -> mutation done with score -7.687119970493464e-06
+2025-03-31 14:50:14,477 Thread-2 (_run) Event: on_best_island_improved
+    Payload:
+
+        def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+            """ 
+            Mathematical function for acceleration in a damped nonlinear oscillator
+
+            Args:
+                x: A numpy array representing observations of current position.
+                v: A numpy array representing observations of velocity.
+                params: Array of numeric constants or parameters to be optimized
+
+            Return:
+                A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+            """
+            acceleration = params[0] + params[1] * v + params[2] * x + params[3] * x * v + params[4] * x**2 + params[5] * x**3
+            return acceleration
+```
+
+結構すぐいい線いってる式が見つかったっぽい、回数を出力してないから無理やり数えないとわからん、明日はProfilerをちゃんと作る
+
+island のリセットが50分に一回なのにリセット発生してないからあてずっぽう感否めないが、論文でのgpt4oの結果とほぼかわらん精度
+
+id ood train それぞれでスコアが何だったのかも知りたい Profiler で取得できるからそれも記録する
+
+## 明日やること
+* Profiler をちゃんと作る、ステート持てるようにクラスのメソッドにして、スレッドセーフな変数でCountとか計測する、gemini2.5 proにコード丸投げして聞いてみる
+* 復習がてらかんたんに docs を作成する
+* clustering の基準を改良してみる、合否結果で分けるとか、得意不得意にてるやつ分けるとか、コードの構造で分けるとか、これもgeminiに聞いてみる
+* mock いじってたら完成してしまったやつにちゃんと名前つけて、適切なモジュールに配置する
+* cluster内で確率NaNが出現するやつに関して原因特定

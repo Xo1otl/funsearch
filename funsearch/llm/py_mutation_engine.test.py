@@ -31,27 +31,27 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for shg efficiency
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
 
     Args:
-        width: A numpy array representing periodic domain width
-        wavelength: A numpy array representing wavelength.
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
         params: Array of numeric constants or parameters to be optimized
 
     Return:
-        A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
     """
-    return params[0] * width + params[1] * wavelength
+    return params[0] * x + params[1] * v + params[2]
 
 
 def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
-    width, wavelength = inputs[:, 0], inputs[:, 1]
+    x, v = inputs[:, 0], inputs[:, 1]
 
     def loss_fn(params):
-        return np.mean((skeleton(width, wavelength, params) - outputs) ** 2)
+        return np.mean((skeleton(x, v, params) - outputs) ** 2)
 
     solver = optax.lbfgs()
     init_params = np.ones(MAX_NPARAMS)
@@ -68,7 +68,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
         return (params, opt_state), None
 
     (final_params, _), _ = jax.lax.scan(
-        body_fn, (init_params, opt_state), None, length=10)
+        body_fn, (init_params, opt_state), None, length=30)
 
     return float(-loss_fn(final_params))
 
@@ -81,7 +81,7 @@ def test_py_mutation_engine():
     data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
     for data_file in data_files:
         df = pd.read_csv(
-            f'/workspaces/mictlan/research/funsearch/data/npda/{data_file}')
+            f'/workspaces/mictlan/research/funsearch/data/oscillator1/{data_file}')
         data = np.array(df)
         inputs = data[:, :-1]
         outputs = data[:, -1].reshape(-1)
@@ -95,7 +95,7 @@ def test_py_mutation_engine():
     # ここの mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     mutation_engine = llm.new_py_mutation_engine(
         prompt_comment="""
-Find the mathematical function skeleton that represents SHG efficiency in QPM devices.
+Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
 """,
         docstring=docstring or "",)
     num_selected_clusters = 2
@@ -111,7 +111,7 @@ Find the mathematical function skeleton that represents SHG efficiency in QPM de
     evolver_config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=3,
-        reset_period=50 * 60
+        reset_period=30 * 60
     )
 
     # FIXME: とりあえず同じの渡してるけどきれいな実装にする

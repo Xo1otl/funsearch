@@ -22,7 +22,8 @@ class Evolver(archipelago.Evolver):
         self._profilers: List[Callable[[archipelago.EvolverEvent], None]] = []
         self.running: bool = False
         self._thread: threading.Thread | None = None
-        self.best_island: archipelago.Island | None = None
+        self.best_island: archipelago.Island = max(
+            self.islands, key=lambda island: island.best_fn().score())
         self.use_profiler(profiler.default_fn)
 
     def _reset_islands(self):

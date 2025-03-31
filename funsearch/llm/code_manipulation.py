@@ -2,6 +2,25 @@ import re
 import ast
 
 
+def fix_wrong_escape(code: str) -> str:
+    try:
+        code = code.replace("â\x80\x98â\x80\x98â\x80\x98", '"""')
+        code = re.sub(r'[^\x00-\x7F]+', ' ', code)
+        code = code.encode("utf-8").decode("unicode_escape")
+        return code
+    except Exception as e:
+        raise ValueError("Unicode escape decoding failed.\n", code) from e
+
+
+def extract_fn_header(code: str) -> str:
+    # トリプルクォートのdocstring（シングル・ダブル両方）を削除
+    match = re.search(r'def\s+\w+\s*\((.*?)\)', code, re.DOTALL)
+    if match:
+        # Return the captured group with any extra surrounding whitespace removed.
+        return match.group(1).strip()
+    raise ValueError("No function header found in the provided code.", code)
+
+
 def fix_single_quote_line(code: str) -> str:
     """
     単体の '"' が存在する行を検出し、その行の '"' を '\"""' に置換します。
@@ -183,11 +202,12 @@ def fix_missing_header_and_ret(code: str, example: str) -> str:
     # If the code doesn't match the two specific cases, return it unchanged.
     return code
 
+
 def fix_indentation(code: str) -> str:
     """
     与えられたコード内の各行について、先頭の空白数をタブ→スペース変換後に計算し、
     4の倍数になるように四捨五入で調整します。
-    
+
     例:
       - 5スペース -> 4スペース
       - 3スペース -> 4スペース
@@ -207,7 +227,7 @@ def fix_indentation(code: str) -> str:
         expanded_line = line.expandtabs(4)
         # 先頭の空白部分を取得
         match = re.match(r'^(\s*)', expanded_line)
-        current_indent = match.group(1) # type: ignore
+        current_indent = match.group(1)  # type: ignore
         num_spaces = len(current_indent)
 
         # 4の倍数でない場合、四捨五入で最も近い倍数に調整

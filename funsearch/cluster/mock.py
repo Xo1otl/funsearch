@@ -60,7 +60,7 @@ class MockIsland(archipelago.Island):
             selected_indices = onp.random.choice(
                 len(available_clusters), size=num_to_select, replace=False, p=probabilities)
         except Exception as e:
-            abnormal_fns = [cluster.best_fn() for cluster, score in zip(
+            abnormal_fns = [str(cluster.best_fn()) for cluster, score in zip(
                 available_clusters, scores) if not onp.isfinite(score)]
             raise Exception(
                 f"Error during cluster sampling. num_fns: {self._num_fns}. Abnormal fns: {abnormal_fns}"

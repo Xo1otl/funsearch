@@ -76,7 +76,8 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         url = "http://ollama:11434/api/generate"
         payload = {
             "prompt": prompt,
-            "model": "gemma3:12b",
+            # "model": "gemma3:12b",
+            "model": "qwen2.5-coder",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
         }
@@ -89,12 +90,14 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         return new_function
 
     def _parse_answer(self, answer: str, example: str) -> str:
-        answer = extract_last_function(answer) # 失敗したらそのまま後続に渡される
+        answer = extract_last_function(answer)  # 失敗したらそのまま後続に渡される
+        answer = fix_wrong_escape(answer)
         answer = answer.replace('```', '')
         answer = fix_single_quote_line(answer)
         answer = fix_missing_header_and_ret(answer, example)
         answer = fix_indentation(answer)
         return answer
+
 
 class OllamaAnswer(BaseModel):
     new_function: str
