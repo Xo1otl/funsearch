@@ -12,10 +12,11 @@ def test_mock():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
+    props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
     functions = [function.new_default_function(props) for _ in range(10)]
 
     engine = function.MockMutationEngine()
+    engine.use_profiler(profiler.default_fn)
     engine.mutate(functions)
 
 

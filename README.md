@@ -50,12 +50,15 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * `archipelago.Cluster.on_fn_added`
 * `archipelago.Cluster.on_fn_selected`
 
-# FIXME
-* しばらく回してると、on_evaluatedの結果が常に一定になる謎のバグがある
-
 # TODO
 * island 内の cluster のボルツマン選択アルゴリズム
 * cluster 内の function の選択アルゴリズム (多分もう完成してる)
+* jax.scipy にも minimize がある jaxopt とかいうのもあるからいろいろ試そう
+* [jaxopt](https://jaxopt.github.io/stable/_autosummary/jaxopt.ScipyMinimize.html) 多分adamよりコレのほうが良さげ
+
+# Idea
+* 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう
+* 各テストに対する合否分布や、プログラムの構造でクラスタリングしてみてもいい気がする
 
 # Memo
 * 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる

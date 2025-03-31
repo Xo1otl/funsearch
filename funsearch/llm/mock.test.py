@@ -13,7 +13,7 @@ def test_mock():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(mock_py_skeleton, "A" * 10, evaluator)
+    props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
     functions = [function.new_default_function(props) for _ in range(1)]
     # evaluate したことない関数で mutation する想定はしていないし evaluate していない関数で mutation しようとするとエラーになる
     for fn in functions:

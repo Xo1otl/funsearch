@@ -1,4 +1,4 @@
-from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple, Any
+from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple, Any, List
 from funsearch import profiler
 
 
@@ -31,19 +31,19 @@ type NewFunction[EvaluatorArg] = Callable[[
 
 class FunctionProps[EvaluatorArg](NamedTuple):
     skeleton: 'Skeleton'
-    evaluator_arg: EvaluatorArg
+    evaluation_inputs: List[EvaluatorArg]
     evaluator: 'Evaluator[EvaluatorArg]'
 
 
 # Evaluateの処理は時間がかかるため、処理の前後でイベントを発火する
 class OnEvaluate[EvaluatorArg](NamedTuple):
     type: Literal["on_evaluate"]
-    payload: EvaluatorArg
+    payload: List[EvaluatorArg]
 
 
 class OnEvaluated[EvaluatorArg](NamedTuple):
     type: Literal["on_evaluated"]
-    payload: Tuple[EvaluatorArg, 'FunctionScore']
+    payload: Tuple[List[EvaluatorArg], 'FunctionScore']
 
 
 type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[EvaluatorArg]

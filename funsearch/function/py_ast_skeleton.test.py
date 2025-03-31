@@ -5,7 +5,7 @@ import jax.numpy as np
 import optax
 from funsearch import function
 
-MAX_NPARAMS = 6
+MAX_NPARAMS = 10
 
 
 @dataclass
@@ -19,7 +19,40 @@ def multi_arg_skeleton(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, params: n
 
 
 def actual_function(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray) -> np.ndarray:
-    return 1.0*x1**2 - 2.0*x2**2 + 0.5*x3**2 + 1.0*x1*x2 - 1.0*x2*x3 + 0.5*x1*x3
+    # めっちゃ複雑な関数
+    t = np.tanh(np.sin(x1) * np.exp(-x2**2) + np.cos(x2) * np.log(x3**2 + 1))
+    t = np.tanh(t + np.tanh(x1 * x3) * (x1 - x2)) + t
+    t = np.tanh(t + (x1**2 - x2**2) * np.sin(x3))
+    return t
+
+
+def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
+    inputs = arg.inputs
+    outputs = arg.outputs
+    x1, x2, x3 = inputs[:, 0], inputs[:, 1], inputs[:, 2]
+
+    def loss_fn(params):
+        return np.mean((skeleton(x1, x2, x3, params) - outputs) ** 2)
+
+    solver = optax.lbfgs()
+    init_params = np.ones(MAX_NPARAMS)
+    opt_state = solver.init(init_params)
+
+    value_and_grad = optax.value_and_grad_from_state(loss_fn)
+
+    def body_fn(carry, _):
+        params, opt_state = carry
+        loss_value, grad = value_and_grad(params, state=opt_state)
+        updates, opt_state = solver.update(
+            grad, opt_state, params, value=loss_value, grad=grad, value_fn=loss_fn)
+        params = optax.apply_updates(params, updates)
+        return (params, opt_state), None
+
+    (final_params, _), _ = jax.lax.scan(
+        # 試した感じ10回で大体みつけてくるけど、年のため30回
+        body_fn, (init_params, opt_state), None, length=10)
+
+    return float(-loss_fn(final_params))
 
 
 def adam_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
@@ -29,7 +62,7 @@ def adam_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     def loss_fn(params):
         return np.mean((skeleton(x1, x2, x3, params) - targets)**2)
     grad_fn = jax.grad(loss_fn)
-    optimizer = optax.adam(3e-4)
+    optimizer = optax.adam(3e-3)
     init_params = np.ones(MAX_NPARAMS)
     init_opt_state = optimizer.init(init_params)
 
@@ -40,7 +73,7 @@ def adam_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
         params = optax.apply_updates(params, updates)
         return (params, opt_state), None
     (final_params, _), _ = jax.lax.scan(
-        body_fn, (init_params, init_opt_state), None, length=10000)
+        body_fn, (init_params, init_opt_state), None, length=1000)
 
     return float(-loss_fn(final_params))
 
@@ -55,7 +88,8 @@ def test_py_ast_skeleton():
     inputs = np.stack([x1, x2, x3], axis=1)
     outputs = actual_function(x1, x2, x3)
     arg = EvaluatorArg(inputs, outputs)
-    props = function.FunctionProps(py_ast_skeleton, arg, adam_evaluator)
+    props = function.FunctionProps(py_ast_skeleton, [arg], lbfgs_evaluator)
+    # props = function.FunctionProps(py_ast_skeleton, [arg], adam_evaluator)
     fn = function.new_default_function(props)
     print(fn.evaluate())
 

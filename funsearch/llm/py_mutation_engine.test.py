@@ -1,5 +1,4 @@
 from funsearch import function
-from funsearch import profiler
 from funsearch import llm
 from funsearch import cluster
 from funsearch import archipelago
@@ -23,7 +22,7 @@ gpus = [d for d in jax.devices() if d.platform == "gpu"]
 if gpus:
     print(f"Using GPU: {gpus[0]}")
 
-MAX_NPARAMS = 6
+MAX_NPARAMS = 10
 
 
 @dataclass
@@ -46,26 +45,30 @@ def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> n
     return params[0] * width + params[1] * wavelength
 
 
-def evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
+def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
     width, wavelength = inputs[:, 0], inputs[:, 1]
 
     def loss_fn(params):
-        return np.mean((skeleton(width, wavelength, params) - outputs)**2)
-    grad_fn = jax.grad(loss_fn)
-    optimizer = optax.adam(1e-2)
+        return np.mean((skeleton(width, wavelength, params) - outputs) ** 2)
+
+    solver = optax.lbfgs()
     init_params = np.ones(MAX_NPARAMS)
-    init_opt_state = optimizer.init(init_params)
+    opt_state = solver.init(init_params)
+
+    value_and_grad = optax.value_and_grad_from_state(loss_fn)
 
     def body_fn(carry, _):
         params, opt_state = carry
-        grads = grad_fn(params)
-        updates, opt_state = optimizer.update(grads, opt_state)
+        loss_value, grad = value_and_grad(params, state=opt_state)
+        updates, opt_state = solver.update(
+            grad, opt_state, params, value=loss_value, grad=grad, value_fn=loss_fn)
         params = optax.apply_updates(params, updates)
         return (params, opt_state), None
+
     (final_params, _), _ = jax.lax.scan(
-        body_fn, (init_params, init_opt_state), None, length=1000)
+        body_fn, (init_params, opt_state), None, length=10)
 
     return float(-loss_fn(final_params))
 
@@ -74,14 +77,17 @@ def test_py_mutation_engine():
     # function の準備
     src = inspect.getsource(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
-    df = pd.read_csv(
-        '/workspaces/mictlan/research/funsearch/data/npda/train.csv')
-    data = np.array(df)
-    inputs = data[:, :-1]
-    outputs = data[:, -1].reshape(-1)
-    evaluator_arg = EvaluatorArg(inputs, outputs)
+    evaluation_inputs = []
+    data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
+    for data_file in data_files:
+        df = pd.read_csv(
+            f'/workspaces/mictlan/research/funsearch/data/npda/{data_file}')
+        data = np.array(df)
+        inputs = data[:, :-1]
+        outputs = data[:, -1].reshape(-1)
+        evaluation_inputs.append(EvaluatorArg(inputs, outputs))
     function_props = function.FunctionProps(
-        py_ast_skeleton, evaluator_arg, evaluator)
+        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
     initial_fn = function.new_default_function(function_props)
 
     docstring = inspect.getdoc(equation)
