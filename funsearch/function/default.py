@@ -13,7 +13,7 @@ def new_default_function[EvaluatorArg](props: FunctionProps[EvaluatorArg]) -> Fu
 _: NewFunction = new_default_function
 
 
-# mock のつもりで書いたけどほとんど完成してたので default にした
+# mock のつもりで書いたけど完成したので default にした
 class DefaultFunction(Function):
     def __init__(self, props: FunctionProps):
         self._score = None

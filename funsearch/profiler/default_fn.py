@@ -9,7 +9,7 @@ logging.basicConfig(
     format='%(asctime)s %(threadName)s %(message)s',
     stream=sys.stdout,
 )
-logger = logging.getLogger(__name__)
+default_logger = logging.getLogger(__name__)
 
 
 def format_source_code(source: str) -> str:
@@ -43,7 +43,7 @@ def format_value(value: Any) -> str:
 
 def default_fn(event: Event) -> None:
     base_message = f"Event: {event.type}"
-    if event.type == "on_best_island_improved":
+    if event.type in ["on_best_island_improved"]:
         detail_lines = []
 
         formatted = format_value(event.payload)
@@ -56,4 +56,4 @@ def default_fn(event: Event) -> None:
         complete_message = "\n".join([base_message] + detail_lines)
     else:
         complete_message = base_message
-    logger.info(complete_message)
+    default_logger.info(complete_message)

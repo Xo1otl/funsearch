@@ -86,8 +86,8 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         result = response.json()
         generated_text = result["response"]
         parsed_output = json.loads(generated_text)
-        new_function = parsed_output["new_function"]
-        return new_function
+        improved_equation = parsed_output["improved_equation"]
+        return improved_equation
 
     def _parse_answer(self, answer: str, example: str) -> str:
         answer = extract_last_function(answer)  # 失敗したらそのまま後続に渡される
@@ -100,4 +100,4 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
 
 
 class OllamaAnswer(BaseModel):
-    new_function: str
+    improved_equation: str

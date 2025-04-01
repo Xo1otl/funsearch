@@ -5,7 +5,7 @@ from funsearch import profiler
 import time
 
 
-def test_mock_cluster():
+def test_default_cluster():
     mock_py_skeleton = function.MockPythonSkeleton()
 
     def evaluator(skeleton: function.Skeleton, arg: str):
@@ -19,14 +19,14 @@ def test_mock_cluster():
     engine = function.MockMutationEngine()
     engine.use_profiler(profiler.default_fn)
 
-    config = cluster.MockIslandsConfig(
+    config = cluster.DefaultIslandsConfig(
         num_islands=3,
         num_selected_clusters=3,
         initial_fn=initial_fn,
         mutation_engine=engine,
     )
 
-    islands = cluster.generate_mock_islands(config)
+    islands = cluster.generate_default_islands(config)
     config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=3,
@@ -39,4 +39,4 @@ def test_mock_cluster():
 
 
 if __name__ == '__main__':
-    test_mock_cluster()
+    test_default_cluster()

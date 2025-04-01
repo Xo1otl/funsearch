@@ -22,14 +22,14 @@ def test_mock_cluster():
     engine = function.MockMutationEngine()
     engine.use_profiler(profile_engine_events)
 
-    config = cluster.MockIslandsConfig(
+    config = cluster.DefaultIslandsConfig(
         num_islands=3,
         num_selected_clusters=3,
         initial_fn=initial_fn,
         mutation_engine=engine,
     )
 
-    islands = cluster.generate_mock_islands(config)
+    islands = cluster.generate_default_islands(config)
     config = archipelago.EvolverConfig(
         islands=islands,
         num_parallel=3,

@@ -7,18 +7,18 @@ import numpy as onp
 from typing import List, Callable
 
 
-class MockIslandsConfig(NamedTuple):
+class DefaultIslandsConfig(NamedTuple):
     num_islands: int
     num_selected_clusters: int
     initial_fn: function.Function
     mutation_engine: function.MutationEngine
 
 
-def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]:
+def generate_default_islands(config: DefaultIslandsConfig) -> List[archipelago.Island]:
     config.initial_fn.evaluate()
     islands: List[archipelago.Island] = []
     for _ in range(10):
-        island = MockIsland(
+        island = DefaultIsland(
             config.initial_fn, config.mutation_engine, config.num_selected_clusters
         )
 
@@ -27,14 +27,14 @@ def generate_mock_islands(config: MockIslandsConfig) -> List[archipelago.Island]
     return islands
 
 
-class MockIsland(archipelago.Island):
+class DefaultIsland(archipelago.Island):
     def __init__(self, initial_fn: function.Function, mutation_engine: function.MutationEngine, num_selected_clusters: int):
         self._best_fn = initial_fn
         self._mutation_engine = mutation_engine
         self._profilers: List[Callable[[archipelago.IslandEvent], None]] = []
         self.num_selected_clusters = num_selected_clusters
         self.clusters: dict[str, Cluster] = {
-            initial_fn.signature(): spawn_mock_cluster(ClusterProps(initial_fn))}
+            initial_fn.signature(): spawn_default_cluster(ClusterProps(initial_fn))}
         self._num_fns = 0
         self._cluster_sampling_temperature_init = 0.1
         self._cluster_sampling_temperature_period = 30_000
@@ -72,7 +72,7 @@ class MockIsland(archipelago.Island):
     def _move_to_cluster(self, fn: function.Function):
         signature = fn.signature()
         if signature not in self.clusters:
-            self.clusters[signature] = spawn_mock_cluster(
+            self.clusters[signature] = spawn_default_cluster(
                 ClusterProps(initial_fn=fn))
         else:
             self.clusters[signature].add_fn(fn)
@@ -108,8 +108,8 @@ class MockIsland(archipelago.Island):
         return self._best_fn
 
 
-def _spawn_mock_cluster(props: ClusterProps) -> Cluster:
-    cluster = MockCluster(props)
+def _spawn_default_cluster(props: ClusterProps) -> Cluster:
+    cluster = DefaultCluster(props)
 
     def profiler_fn(event: ClusterEvent):
         profiler.default_fn(event)
@@ -118,17 +118,13 @@ def _spawn_mock_cluster(props: ClusterProps) -> Cluster:
     return cluster
 
 
-spawn_mock_cluster: SpawnCluster = _spawn_mock_cluster
+spawn_default_cluster: SpawnCluster = _spawn_default_cluster
 
 
-class MockCluster(Cluster):
+class DefaultCluster(Cluster):
     def __init__(self, props: ClusterProps) -> None:
-        self._signature = props.initial_fn.signature()
         self._functions = [props.initial_fn]
         self._profilers: List[Callable[[ClusterEvent], None]] = []
-
-    def signature(self):
-        return self._signature
 
     def select_fn(self) -> function.Function:
         # 各関数の skeleton() からソースコードの長さを取得

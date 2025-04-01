@@ -31,10 +31,14 @@ class PyAstSkeleton(Skeleton):
 
         # コンパイル済みの名前空間から関数オブジェクトを取得し、引数をそのまま渡して実行します
         self._func = local_ns[func_name]
-        self._source_code = fn_code
+        self._fn_code = fn_code
 
     def __call__(self, *args: Any, **kwargs: Any):
-        return self._func(*args, **kwargs)
+        try:
+            result = self._func(*args, **kwargs)
+            return result
+        except Exception as e:
+            raise RuntimeError("関数の実行中にエラーが発生しました", self._fn_code) from e
 
     def __str__(self):
-        return self._source_code
+        return self._fn_code

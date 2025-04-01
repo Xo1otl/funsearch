@@ -1,7 +1,7 @@
 from typing import Callable
 from funsearch import profiler
 import sys
-from .mock import *
+from .default import *
 from funsearch import archipelago
 from funsearch import llm
 import time
@@ -44,7 +44,7 @@ class Evolver(archipelago.Evolver):
         best_fn = best_island.best_fn()
         new_islands: List[archipelago.Island] = [
             # FIXME: cluster の mock island は archipelago の mock island と違って改造してるうちにほぼ完成した実装だから名前を変えたほうがいい
-            MockIsland(initial_fn=best_fn.clone(), mutation_engine=self._mutation_engine, num_selected_clusters=self._num_selected_clusters) for _ in to_reset
+            DefaultIsland(initial_fn=best_fn.clone(), mutation_engine=self._mutation_engine, num_selected_clusters=self._num_selected_clusters) for _ in to_reset
         ]
 
         removed_islands = []
