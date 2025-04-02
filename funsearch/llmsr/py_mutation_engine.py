@@ -2,18 +2,11 @@ from funsearch import function
 from funsearch import profiler
 from typing import List, Callable
 from google import genai
-from infra.ai import llm
 from pydantic import BaseModel
 import requests
 import json
 import textwrap
 from .code_manipulation import *
-
-
-def new_py_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
-    engine = PyMutationEngine(prompt_comment, docstring)
-    engine.use_profiler(profiler.default_fn)
-    return engine
 
 
 class ResponseSchema(BaseModel):

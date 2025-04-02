@@ -2,19 +2,17 @@
 * **従来手法との違い、使用されている理論的アプローチ、新しさ（新規性） を整理、この手法を自分が研究を進めている/興味を持っている分野に適用するとどうなるかを具体的に考察する。**
 * **論文についての検証のための実装を行い、その内容について説明する。 どの部分に着目してどのような検証を行ったか、それによって何が明確となるかについての説明を行う。**
 
-# やりたいこと
+# やったこと/やりたいこと
 * モデルの性能が Gemma3:12b とかでもちゃんと公式発見できた、元々の知識に絶対ない公式を探索した (セルマイヤーの分散式を代入したNPDAの公式の探索)
 * 実際発見した公式を evaluate して誤差の検証をした、データセットにない計算も検証して、一応可視化も行った
-* torch と numpy の比較に関しては正直わりと自明だと思うからやらなかった
 * adam と bfgs の比較検証は個人的にやっときたい (個人的に知りたいだけで、あんま新しくないからウケないかも)
 * PPL に関してまだあんまよくわかってない
 * 逆計算が無理な場合でも、順計算のサロゲートモデルと、関数探索を組み合わせて一番効率よくフラットになる分極反転ドメイン幅構造の関数表現を見つけられそう
 * どっちにしろ探索はやろうと思ってたし、むしろサロゲートモデルなくても、探索だけでみつかるかもしれんからめっちゃ研究に役立つ
-* 適当にPoC動かした時、LLMの出力が想定外で失敗しているものがたくさんあった。そこでプロンプトを改良して、LLMの出力がバグらんプロンプトを頑張って考えた
+* 適当にPoC動かした時、LLMの出力が想定外で失敗しているものがたくさんあった。そこで、LLMの出力がバグらんプロンプトを頑張って考えた
 * clustering が、スコアの完全一致だけどここあんま意味あるかわからんくて困ってる
-* llm へのプロンプトの形式とかちょっと改造してる、いいのかわからん
 * 原文の cluster 選択アルゴリズムで、numpy.random.choiceが復元抽出になってた、これだとv0,v1が同じもの選ばれたりする可能性があるから多分ミスだと思う
-* 原文に `Combining LLM-SR with LLM backbones that are better in generating PyTorch code could potentially enhance equation discovery by leveraging differentiable parameter optimization in future.` って書いてるけどbfgsでも微分は必要。ただ自動微分じゃないからjaxより遅いけど、torchのadamよりはbfgsのほうが精度がよっぽど高い
+* 原文に `Combining LLM-SR with LLM backbones that are better in generating PyTorch code could potentially enhance equation discovery by leveraging differentiable parameter optimization in future.` って書いてるけどbfgsでも微分は必要。自動微分じゃないからjaxより遅いけど、torchのadamよりはbfgsのほうが精度がよっぽど高い
 
 # 疑問点
 * **従来手法との違い、使用されている理論的アプローチ、新しさ（新規性） を整理、この手法を自分が研究を進めている/興味を持っている分野に適用するとどうなるかを具体的に考察する。**
@@ -29,14 +27,14 @@ Enumは〇〇Kind
 
 Interface にはプロパティを持てない、プロパティにも制約をつけたい場合、factory関数の interface の引数で指定する
 
-名詞のインターフェースは
+名詞のインターフェースの命名で困ったら 〇〇able で実装は 〇〇er (Observable Observer など)
 
 コールバック関数について、事前イベントのための関数は 動詞の現在形 + 名詞 、事後イベントのための関数は 名詞 +動詞の過去形 で命名
 
 ## イベントについて
-* 時間がかかり、不確定要素の強い処理に対してのみ、事前イベントと事後イベントの両方でリスナーを登録できる必要がある
-* 処理の引数だけが重要な場合、事前イベントのみ登録できればよい
-* 処理の結果も重要な場合、事後イベントのみ登録できればよい (引数は事後でもlistenerに渡せる)
+* 時間がかかり、不確定要素の強い処理に対してのみ、事前イベントと事後イベントの両方を発火できる必要がある
+* 処理の引数だけが重要な場合、事前イベントのみ発火できればよい
+* 処理の結果も重要な場合、事後イベントのみ発火できればよい (引数は事後でもprofilerに渡せる)
 
 ### 時間がかかるため両方の事前・事後の両方でイベントを発火するもの
 * `function.Function.evaluate`
@@ -58,6 +56,7 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * cluster 内の function の選択アルゴリズム (多分もう完成してる)
 * jax.scipy にも minimize がある jaxopt とかいうのもあるからいろいろ試そう
 * [jaxopt](https://jaxopt.github.io/stable/_autosummary/jaxopt.ScipyMinimize.html) 多分adamよりコレのほうが良さげ
+* イベントの型に島のidとか含めるようにしたら、更に詳細な profiler が作れるようになる
 
 # Idea
 * 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう
@@ -66,9 +65,12 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 # Memo
 * 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる
     * XLA_PYTHON_CLIENT_PREALLOCATE=false
+* 大した計算量じゃないらしく jax より numpy のほうが普通に evaluate が速い
+* 強制はしてないけど profiler と mutation engine はシングルトンを想定
 
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 
+## もとの prompt 例
 ```
 """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 

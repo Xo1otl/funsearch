@@ -41,7 +41,7 @@ class Island(profiler.Pluggable[IslandEvent], Protocol):
     def best_fn(self) -> function.Function:
         ...
 
-    # 島の変化はより上位の存在がコントロールしており、変化は外部からの要求によって行う
-    # これは、島の数だけ計算リソースが必要になることを避け、島を保持しながら余裕がある時だけ計算を呼び出すためである
+    # 島の変化は上位のコンポーネントがコントロールするため、変化は外部からの要求によって行う
+    # これは、島の数だけ計算リソースが必要になることを避け、島を保持しながら余裕がある時だけ計算を呼び出すため
     def request_mutation(self) -> function.Function:
         ...

@@ -1,6 +1,7 @@
 from funsearch import function
 from funsearch import profiler
 import time
+from typing import List
 
 
 def test_mock():
@@ -12,8 +13,12 @@ def test_mock():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
-    functions = [function.new_default_function(props) for _ in range(10)]
+    props = function.FunctionProps(
+        mock_py_skeleton, ["A" * 10], evaluator)
+    functions: List[function.Function] = [
+        function.DefaultFunction(props) for _ in range(10)]
+    for fn in functions:
+        fn.use_profiler(profiler.default_fn)
 
     engine = function.MockMutationEngine()
     engine.use_profiler(profiler.default_fn)

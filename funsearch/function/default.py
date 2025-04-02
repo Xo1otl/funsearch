@@ -1,21 +1,11 @@
 from .domain import *
-from funsearch import profiler
 import copy
 
 
-def new_default_function[EvaluatorArg](props: FunctionProps[EvaluatorArg]) -> Function[EvaluatorArg]:
-    fn = DefaultFunction(props)
-    fn.use_profiler(profiler.default_fn)
-    return fn
-
-
-# 型チェックで変数に代入された関数は generic にできないためこうするしかない
-_: NewFunction = new_default_function
-
 
 # mock のつもりで書いたけど完成したので default にした
-class DefaultFunction(Function):
-    def __init__(self, props: FunctionProps):
+class DefaultFunction[EvaluatorArg](Function[EvaluatorArg]):
+    def __init__(self, props: FunctionProps[EvaluatorArg]):
         self._score = None
         self._skeleton = props.skeleton
         self._evaluator = props.evaluator

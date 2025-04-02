@@ -4,6 +4,7 @@ import jax
 import jax.numpy as np
 import optax
 from funsearch import function
+from funsearch import profiler
 
 MAX_NPARAMS = 10
 
@@ -49,7 +50,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
         return (params, opt_state), None
 
     (final_params, _), _ = jax.lax.scan(
-        # 試した感じ10回で大体みつけてくるけど、年のため30回
+        # 試した感じ10回で大体みつけてくるけど、念のため30回
         body_fn, (init_params, opt_state), None, length=10)
 
     return float(-loss_fn(final_params))
@@ -88,9 +89,11 @@ def test_py_ast_skeleton():
     inputs = np.stack([x1, x2, x3], axis=1)
     outputs = actual_function(x1, x2, x3)
     arg = EvaluatorArg(inputs, outputs)
-    props = function.FunctionProps(py_ast_skeleton, [arg], lbfgs_evaluator)
+    props = function.FunctionProps(
+        py_ast_skeleton, [arg], lbfgs_evaluator)
     # props = function.FunctionProps(py_ast_skeleton, [arg], adam_evaluator)
-    fn = function.new_default_function(props)
+    fn = function.DefaultFunction(props)
+    fn.use_profiler(profiler.default_fn)
     print(fn.evaluate())
 
 

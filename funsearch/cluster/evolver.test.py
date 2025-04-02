@@ -14,7 +14,8 @@ def test_evolver():
         return score
 
     props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
-    initial_fn = function.new_default_function(props)
+    initial_fn = function.DefaultFunction(props)
+    initial_fn.use_profiler(profiler.default_fn)
 
     engine = function.MockMutationEngine()
     engine.use_profiler(profiler.default_fn)

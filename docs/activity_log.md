@@ -256,3 +256,6 @@ id ood train それぞれでスコアが何だったのかも知りたい Profil
 * 1000エポック程度だとnpdaは見つからない、oscillator1は500回ぐらいで見つかってた `grep on_evaluated out* | wc -l`
 
 # 4月2日
+
+## TODO
+* なんか oscillar1 で evaluate の結果がLLM-SRと違うっぽいので確かめる

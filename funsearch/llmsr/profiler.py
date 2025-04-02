@@ -14,7 +14,9 @@ class Profiler:
         self._lock = threading.Lock()
 
     def profile(self, event: AllEvent):
-        if event.type == "on_evaluated":
+        if event.type == "on_evaluate":
+            self.logger.info(f"Event: {event.type}")
+        elif event.type == "on_evaluated":
             with self._lock:
                 self._evaluation_count += 1
         elif event.type == "on_best_island_improved":
@@ -32,19 +34,14 @@ class Profiler:
                 f"code:\n {str(event.payload.skeleton())}"
             )
         elif event.type == "on_islands_removed":
-            pass
+            self.logger.info(f"Event: {event.type}")
         elif event.type == "on_islands_revived":
-            pass
-
+            self.logger.info(f"Event: {event.type}")
         elif event.type == "on_fn_added":
-            pass
+            self.logger.info(f"Event: {event.type}")
         elif event.type == "on_fn_selected":
-            pass
+            self.logger.info(f"Event: {event.type}")
         elif event.type == "on_mutate":
-            pass
+            self.logger.info(f"Event: {event.type}")
         elif event.type == "on_mutated":
-            pass
-        else:
-            raise NotImplementedError(
-                f"Event type '{event.type}' not implemented in profiler."
-            )
+            self.logger.info(f"Event: {event.type}")

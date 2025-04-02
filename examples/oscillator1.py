@@ -1,8 +1,6 @@
 from funsearch import function
 from funsearch import llmsr
-from funsearch import cluster
 from dataclasses import dataclass
-import inspect
 import jax
 import jax.numpy as np
 import optax
@@ -84,37 +82,17 @@ def main():
         outputs = data[:, -1].reshape(-1)
         evaluation_inputs.append(EvaluatorArg(inputs, outputs))
 
-    # function の準備
-    src = inspect.getsource(equation)
-    py_ast_skeleton = function.PyAstSkeleton(src)
-    function_props = function.FunctionProps(
-        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
-    initial_fn = function.new_default_function(function_props)
-
-    # mutation engine の準備
-    docstring = inspect.getdoc(equation)
-    prompt_comment_oscillator1 = """
+    prompt_comment = """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
 """  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
-    mutation_engine = llmsr.new_py_mutation_engine(
-        prompt_comment=prompt_comment_oscillator1,
-        docstring=docstring or "",)
 
-    # evolver の準備
-    islands_config = cluster.IslandConfig(
-        num_islands=5,
-        num_selected_clusters=2,
-        initial_fn=initial_fn,
-        mutation_engine=mutation_engine,
-    )
-    evolver_config = cluster.EvolverConfig(
-        island_config=islands_config,
-        num_parallel=2,
-        reset_period=30 * 60,
-        profiler_fn=llmsr.Profiler().profile
-    )
+    evolver = llmsr.spawn_evolver(llmsr.EvolverConfig(
+        equation=equation,
+        evaluation_inputs=evaluation_inputs,
+        evaluator=lbfgs_evaluator,
+        prompt_comment=prompt_comment,
+    ))
 
-    evolver = cluster.Evolver(evolver_config)
     evolver.start()
 
 
