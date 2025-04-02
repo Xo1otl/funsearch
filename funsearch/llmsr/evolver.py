@@ -8,10 +8,10 @@ from .py_mutation_engine import PyMutationEngine
 
 
 # TODO: ここでジェネリスクで evaluator_arg とか equation_arg の型保証できそう
-class EvolverConfig[T, **P](NamedTuple):
-    equation: Callable[P, Any]
+class EvolverConfig[**P, R, T](NamedTuple):
+    equation: Callable[P, R]
     evaluation_inputs: List[T]
-    evaluator: function.Evaluator[T, P]
+    evaluator: function.Evaluator[P, R, T]
     prompt_comment: str
     profiler_fn: profiler.ProfilerFn = profiler.default_fn
     num_islands: int = 10

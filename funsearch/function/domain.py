@@ -38,8 +38,8 @@ type FunctionEvent = OnEvaluate | OnEvaluated
 
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-class Skeleton[**P](Protocol):
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
+class Skeleton[**P, R](Protocol):
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         ...
 
 
@@ -71,7 +71,7 @@ class Function(profiler.Pluggable[FunctionEvent], Protocol):
         ...
 
 
-type Evaluator[T, **P] = Callable[[Skeleton[P], T], 'FunctionScore']
+type Evaluator[**P, R, T] = Callable[[Skeleton[P, R], T], 'FunctionScore']
 type FunctionScore = float
 
 type Signature = str

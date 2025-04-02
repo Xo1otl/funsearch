@@ -43,7 +43,8 @@ def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> n
     return params[0] * width + params[1] * wavelength + params[2]
 
 
-def lbfgs_evaluator(skeleton: function.Skeleton[(np.ndarray, np.ndarray, np.ndarray)], arg: EvaluatorArg) -> float:
+# Callable と同じ型の指定方法で skeleton の型を指定する
+def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
     width, wavelength = inputs[:, 0], inputs[:, 1]
