@@ -67,6 +67,7 @@ Interface にはプロパティを持てない、プロパティにも制約を�
     * XLA_PYTHON_CLIENT_PREALLOCATE=false
 * 大した計算量じゃないらしく jax より numpy のほうが普通に evaluate が速い
 * 強制はしてないけど profiler と mutation engine はシングルトンを想定
+* 関数の generics は paramspec でできる、型の渡し方などは Callable と同じ
 
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 

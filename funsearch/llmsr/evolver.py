@@ -1,4 +1,4 @@
-from typing import Callable, NamedTuple, List, Any
+from typing import Callable, NamedTuple, List
 from funsearch import profiler
 from funsearch import archipelago
 from funsearch import function
