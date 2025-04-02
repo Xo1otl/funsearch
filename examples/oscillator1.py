@@ -30,7 +30,7 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation_oscillator1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ Mathematical function for acceleration in a damped nonlinear oscillator
 
     Args:
@@ -44,7 +44,7 @@ def equation_oscillator1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np
     return params[0] * x + params[1] * v + params[2]
 
 
-def lbfgs_evaluator_oscillator1(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
+def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
     x, v = inputs[:, 0], inputs[:, 1]
@@ -85,11 +85,11 @@ def main():
         evaluation_inputs.append(EvaluatorArg(inputs, outputs))
 
     # function の準備
-    src = inspect.getsource(equation_oscillator1)
-    docstring = inspect.getdoc(equation_oscillator1)
+    src = inspect.getsource(equation)
+    docstring = inspect.getdoc(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
     function_props = function.FunctionProps(
-        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator_oscillator1)
+        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
     initial_fn = function.new_default_function(function_props)
 # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     prompt_comment_oscillator1 = """

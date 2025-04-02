@@ -69,8 +69,6 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 
-LLMがたくさん考えてくれる時は、レーベルシュタイン距離が一番遠いものを採用する
-
 ```
 """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
