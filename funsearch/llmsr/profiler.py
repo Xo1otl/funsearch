@@ -13,7 +13,7 @@ class Profiler:
         self._evaluation_count = 0
         self._lock = threading.Lock()
 
-    def profile_event(self, event: AllEvent):
+    def profile(self, event: AllEvent):
         if event.type == "on_evaluated":
             with self._lock:
                 self._evaluation_count += 1

@@ -1,6 +1,8 @@
 from funsearch import function
 from funsearch import profiler
 from typing import List, Callable
+from google import genai
+from infra.ai import llm
 from pydantic import BaseModel
 import requests
 import json
@@ -14,12 +16,58 @@ def new_py_mutation_engine(prompt_comment: str, docstring: str) -> function.Muta
     return engine
 
 
+class ResponseSchema(BaseModel):
+    improved_equation: str
+
+
 class PyMutationEngine(function.MutationEngine):
-    def __init__(self, prompt_comment: str, docstring: str):
+    def __init__(self, prompt_comment: str, docstring: str, gemini_client: None | genai.Client = None):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
         self._prompt_comment = prompt_comment
         self._docstring = docstring
+        self._gemini_client = gemini_client
+
+    def _ask_gemini(self, prompt: str) -> str:
+        if self._gemini_client is None:
+            raise Exception("Gemini client is not initialized.")
+        response = self._gemini_client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt,
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': ResponseSchema,
+            },
+        )
+        try:
+            parsed: ResponseSchema = response.parsed  # type: ignore
+            improved_equation = parsed.improved_equation
+            return improved_equation
+        except Exception as e:
+            raise Exception(
+                f"gemini response parse error",
+                response.text
+            ) from e
+
+    def _ask_ollama(self, prompt: str) -> str:
+        url = "http://ollama:11434/api/generate"
+        payload = {
+            "prompt": prompt,
+            "model": "gemma3:12b",
+            # "model": "qwen2.5-coder:14b",
+            "format": ResponseSchema.model_json_schema(),
+            "stream": False,
+            "options": {
+                "temperature": 1,
+            }
+        }
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        generated_text = result["response"]
+        parsed_output = json.loads(generated_text)
+        improved_equation = parsed_output["improved_equation"]
+        return improved_equation
 
     def mutate(self, fn_list: List[function.Function]):
         for profiler_fn in self._profilers:
@@ -32,7 +80,7 @@ class PyMutationEngine(function.MutationEngine):
         skeletons = [fn.skeleton() for fn in sorted_fn_list]
         prompt = self._construct_prompt(skeletons)
         # これは時間がかかる処理
-        answer = self._ask_llm(prompt)
+        answer = self._ask_ollama(prompt)
         fn_code = self._parse_answer(answer, str(skeletons[0]))
         new_skeleton = function.PyAstSkeleton(fn_code)
         new_fn = fn_list[0].clone(new_skeleton)  # どれcloneしても構わん
@@ -42,10 +90,6 @@ class PyMutationEngine(function.MutationEngine):
                 payload=(fn_list, new_fn)
             ))
         return new_fn
-
-    def use_profiler(self, profiler_fn):
-        self._profilers.append(profiler_fn)
-        return lambda: self._profilers.remove(profiler_fn)
 
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
@@ -74,26 +118,6 @@ Implement the function correctly in Python and store the entire function in json
 
         return prompt
 
-    def _ask_llm(self, prompt: str) -> str:
-        url = "http://ollama:11434/api/generate"
-        payload = {
-            "prompt": prompt,
-            "model": "gemma3:12b",
-            # "model": "qwen2.5-coder:14b",
-            "format": OllamaAnswer.model_json_schema(),
-            "stream": False,
-            "options": {
-                "temperature": 1,
-            }
-        }
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        generated_text = result["response"]
-        parsed_output = json.loads(generated_text)
-        improved_equation = parsed_output["improved_equation"]
-        return improved_equation
-
     def _parse_answer(self, answer: str, example: str) -> str:
         answer = extract_last_function(answer)  # 失敗したらそのまま後続に渡される
         answer = answer.replace('```', '')
@@ -103,6 +127,6 @@ Implement the function correctly in Python and store the entire function in json
         answer = fix_wrong_escape(answer)
         return answer
 
-
-class OllamaAnswer(BaseModel):
-    improved_equation: str
+    def use_profiler(self, profiler_fn):
+        self._profilers.append(profiler_fn)
+        return lambda: self._profilers.remove(profiler_fn)

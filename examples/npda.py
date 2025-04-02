@@ -30,7 +30,7 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation_npda(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
+def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ Mathematical function for shg efficiency
 
     Args:
@@ -44,7 +44,7 @@ def equation_npda(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray)
     return params[0] * width + params[1] * wavelength + params[2]
 
 
-def lbfgs_evaluator_npda(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
+def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
     width, wavelength = inputs[:, 0], inputs[:, 1]
@@ -72,7 +72,7 @@ def lbfgs_evaluator_npda(skeleton: function.Skeleton, arg: EvaluatorArg) -> floa
     return float(-loss_fn(final_params))
 
 
-def test_py_mutation_engine():
+def main():
     # 必要なデータのロード
     evaluation_inputs = []
     data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
@@ -85,31 +85,26 @@ def test_py_mutation_engine():
         evaluation_inputs.append(EvaluatorArg(inputs, outputs))
 
     # function の準備
-    src = inspect.getsource(equation_npda)
+    src = inspect.getsource(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
     function_props = function.FunctionProps(
-        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator_npda)
+        py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
     initial_fn = function.new_default_function(function_props)
-    docstring = inspect.getdoc(equation_npda)
-# prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
-#     prompt_comment_oscillator1 = """
-# Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
-# """
+
+    # mutation engine の準備
+    docstring = inspect.getdoc(equation)
     prompt_comment_npda = """
 Find the mathematical function skeleton that represents SHG efficiency in vertical Quasi-Phase Matching devices, given domain width and wavelength.
 The final efficiency expression is expected to be proportional to the square of a sinc-like function involving terms derived from width and wavelength.
-"""
-
-    # mutation engine の準備
+"""  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     mutation_engine = llmsr.new_py_mutation_engine(
         prompt_comment=prompt_comment_npda,
         docstring=docstring or "",)
-    num_selected_clusters = 2
 
     # evolver の準備
     islands_config = cluster.IslandConfig(
         num_islands=5,
-        num_selected_clusters=num_selected_clusters,
+        num_selected_clusters=2,
         initial_fn=initial_fn,
         mutation_engine=mutation_engine,
     )
@@ -117,20 +112,12 @@ The final efficiency expression is expected to be proportional to the square of 
         island_config=islands_config,
         num_parallel=2,
         reset_period=30 * 60,
-        num_selected_clusters=num_selected_clusters,
-        profiler_fn=llmsr.Profiler().profile_event
+        profiler_fn=llmsr.Profiler().profile
     )
 
-    # FIXME: とりあえず同じの渡してるけどファクトリ関数作ってきれいな実装にする
     evolver = cluster.Evolver(evolver_config)
-    # demo_fn = initial_fn.clone(initial_fn.skeleton())
-    # start_time = time.time()
-    # result = demo_fn.evaluate()
-    # end_time = time.time()
-    # print(
-    #     f"Initial function evaluation time: {end_time - start_time:.2f} seconds, result: {result}")
     evolver.start()
 
 
 if __name__ == "__main__":
-    test_py_mutation_engine()
+    main()

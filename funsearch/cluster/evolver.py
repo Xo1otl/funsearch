@@ -39,7 +39,6 @@ class EvolverConfig(NamedTuple):
     island_config: 'IslandConfig'
     num_parallel: int
     reset_period: int
-    num_selected_clusters: int
     profiler_fn: profiler.ProfilerFn
 
 
@@ -48,7 +47,7 @@ class Evolver(archipelago.Evolver):
     def __init__(self, config: EvolverConfig):
         self.islands = generate_islands(config.island_config)
         self._mutation_engine = config.island_config.mutation_engine
-        self._num_selected_clusters = config.num_selected_clusters
+        self._num_selected_clusters = config.island_config.num_selected_clusters
         self.num_parallel = config.num_parallel
         self.reset_period = config.reset_period
         self._profilers: List[Callable[[archipelago.EvolverEvent], None]] = []

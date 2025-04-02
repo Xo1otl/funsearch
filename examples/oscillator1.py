@@ -86,25 +86,24 @@ def main():
 
     # function の準備
     src = inspect.getsource(equation)
-    docstring = inspect.getdoc(equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
     function_props = function.FunctionProps(
         py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
     initial_fn = function.new_default_function(function_props)
 
     # mutation engine の準備
+    docstring = inspect.getdoc(equation)
     prompt_comment_oscillator1 = """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
 """  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     mutation_engine = llmsr.new_py_mutation_engine(
         prompt_comment=prompt_comment_oscillator1,
         docstring=docstring or "",)
-    num_selected_clusters = 2
 
     # evolver の準備
     islands_config = cluster.IslandConfig(
         num_islands=5,
-        num_selected_clusters=num_selected_clusters,
+        num_selected_clusters=2,
         initial_fn=initial_fn,
         mutation_engine=mutation_engine,
     )
@@ -112,8 +111,7 @@ Find the mathematical function skeleton that represents acceleration in a damped
         island_config=islands_config,
         num_parallel=2,
         reset_period=30 * 60,
-        num_selected_clusters=num_selected_clusters,
-        profiler_fn=llmsr.Profiler().profile_event
+        profiler_fn=llmsr.Profiler().profile
     )
 
     evolver = cluster.Evolver(evolver_config)
