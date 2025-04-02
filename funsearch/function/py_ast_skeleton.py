@@ -9,7 +9,7 @@ import scipy
 # 1. 関数部分だけを取り出した text をもとに構成する
 # 2. ast.parse で関数をパースする
 # 3. 元のコードではめちゃくちゃ頑張って docstring パースして戻すなどしていたけど多分無駄
-# TODO: 関数名を変更できる必要がある
+# TODO: こっちで関数名を変更できると嬉しい
 class PyAstSkeleton(Skeleton):
     def __init__(self, fn_code: str):
         try:

@@ -3,15 +3,6 @@ from funsearch import function
 from funsearch import profiler
 
 
-class EvolverConfig(NamedTuple):
-    islands: List['Island']
-    num_parallel: int
-    reset_period: int
-
-
-type SpawnEvolver = Callable[[EvolverConfig], 'Evolver']
-
-
 class OnIslandsRemoved(NamedTuple):
     type: Literal["on_islands_removed"]
     payload: List['Island']
@@ -36,14 +27,6 @@ class Evolver(profiler.Pluggable[EvolverEvent], Protocol):
 
     def stop(self) -> None:
         ...
-
-
-class IslandsConfig(NamedTuple):
-    initial_fn: function.Function
-    num_islands: int
-
-
-type GenerateIslands = Callable[[IslandsConfig], List['Island']]
 
 
 class OnBestFnImproved(NamedTuple):

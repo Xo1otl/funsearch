@@ -22,7 +22,7 @@ class Profiler:
                 current_eval_count = self._evaluation_count
             self.logger.info(
                 f"[{event.type}] Best island improved at global evaluation count: {current_eval_count}. "
-                f"code: {str(event.payload.best_fn().skeleton())}"
+                f"code:\n {str(event.payload.best_fn().skeleton())}"
             )
         elif event.type == "on_best_fn_improved":
             with self._lock:

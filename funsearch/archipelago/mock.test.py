@@ -14,10 +14,10 @@ def test_mock_evolver():
     props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
     initial_fn = function.new_default_function(props)
 
-    islands = archipelago.generate_islands(
-        archipelago.IslandsConfig(num_islands=10, initial_fn=initial_fn))
+    islands = archipelago.generate_mock_islands(
+        archipelago.MockIslandConfig(num_islands=10, initial_fn=initial_fn))
 
-    config = archipelago.EvolverConfig(
+    config = archipelago.MockEvolverConfig(
         islands=islands,
         num_parallel=3,
         reset_period=5

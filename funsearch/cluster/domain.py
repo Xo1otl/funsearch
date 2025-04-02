@@ -1,13 +1,6 @@
-from typing import NamedTuple, List, Callable, Protocol, Literal, Tuple
+from typing import NamedTuple, List, Protocol, Literal, Tuple
 from funsearch import function
 from funsearch import profiler
-
-
-class ClusterProps(NamedTuple):
-    initial_fn: function.Function
-
-
-type SpawnCluster = Callable[[ClusterProps], Cluster]
 
 
 class OnFnAdded(NamedTuple):
@@ -34,4 +27,3 @@ class Cluster(profiler.Pluggable[ClusterEvent], Protocol):
     # 移住の時に必要
     def best_fn(self) -> function.Function:
         ...
-

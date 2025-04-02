@@ -1,6 +1,6 @@
 from funsearch import function
 from funsearch import profiler
-from funsearch import llm
+from funsearch import llmsr
 import time
 import ast
 
@@ -31,7 +31,7 @@ def test_parse():
         # "def equation_v1(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:\n    # Assuming SHG efficiency depends on a more complex relationship than a simple linear combination.\n    # For instance, let's consider a model where SHG efficiency is influenced by the ratio of width to wavelength,\n    # and also includes some non-linear parameters.\n    \n    # Example: Using a Gaussian function for simplicity, which could be adjusted based on physical insights or experimental data.\n    width_normalized = width / np.max(width)\n    wavelength_normalized = wavelength / np.max(wavelength)\n    \n    efficiency = params[0] * np.exp(-params[1] * (width_normalized - params[2])**2) *\n                    np.exp(-params[3] * (wavelength_normalized - params[4])**2) +\n                    params[5] * np.sin(params[6] * width_normalized + params[7]) +\n                    params[8] * np.cos(params[9] * wavelength_normalized)\n    \n    return efficiency",
         "def equation_v2(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:\n    â\x80\x98â\x80\x98â\x80\x98 \n    Mathematical function for shg efficiency\n\n    Args:\n        width: A numpy array representing periodic domain width\n        wavelength: A numpy array representing wavelength.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.\n    â\x80\x98â\x80\x98â\x80\x98\n    # Incorporate higher-order terms and physical constraints for better accuracy\n    shg_efficiency = params[0] * width**2 + params[1] * wavelength**-1 + params[2] * width * wavelength + params[3] * np.sin(params[4] * width) + params[5] * np.cos(params[6] * wavelength)\n\n    # Apply a physical constraint that efficiency cannot exceed 1\n    shg_efficiency = np.clip(shg_efficiency, 0, 1)\n\n    return shg_efficiency",
     ]
-    engine = llm.MockMutationEngine("", "")
+    engine = llmsr.PyMutationEngine("", "")
     for demo_fn in edge_cases:
         try:
             parsed = engine._parse_answer(demo_fn, edge_cases[0])

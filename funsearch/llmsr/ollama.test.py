@@ -32,12 +32,12 @@ class Demo:
         generated_text = result.get("message", {}).get("content", "")
         try:
             parsed_output = json.loads(generated_text)
-            new_function = parsed_output.get("improved_function", "")
+            improved_function = parsed_output.get("improved_function", "")
         except json.JSONDecodeError:
             # Fallback: If structured output parsing fails, return the raw generated text.
-            new_function = generated_text
+            improved_function = generated_text
 
-        return new_function
+        return improved_function
 
     def _ask_llm_generate(self, prompt: str) -> str:
         # URL for the generate endpoint of the ollama server.
@@ -117,10 +117,10 @@ def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
 
 '''
     # Get the new function from the LLM via the generate endpoint.
-    new_func = demo._ask_llm_chat(prompt)
+    improved_fn = demo._ask_llm_chat(prompt)
     print("Newly Generated Function by chat:")
-    print(new_func)
+    print(improved_fn)
 
-    new_func = demo._ask_llm_generate(prompt)
+    improved_fn = demo._ask_llm_generate(prompt)
     print("Newly Generated Function by generate:")
-    print(new_func)
+    print(improved_fn)

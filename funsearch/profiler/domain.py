@@ -13,5 +13,8 @@ class Event(Protocol):
 
 # 決定的でない呼び出しが多いコンポーネントで、http サーバーのように profiler を刺してイベントのプロファイリングを行う設計をするためのプロトコル
 class Pluggable[T: Event](Protocol):
-    def use_profiler(self, profiler_fn: Callable[[T], None]) -> Remove:
+    def use_profiler(self, profiler_fn: 'ProfilerFn[T]') -> Remove:
         ...
+
+
+type ProfilerFn[T: Event] = Callable[[T], None]

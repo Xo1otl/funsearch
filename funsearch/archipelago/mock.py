@@ -9,18 +9,21 @@ import concurrent.futures
 import traceback
 
 
-def _spawn_mock_evolver(config: EvolverConfig) -> Evolver:
+class MockEvolverConfig(NamedTuple):
+    islands: List[Island]
+    num_parallel: int
+    reset_period: int
+
+
+def spawn_mock_evolver(config: MockEvolverConfig) -> Evolver:
     evolver = MockEvolver(config)
     evolver.use_profiler(profiler.default_fn)
     return evolver
 
 
-spawn_mock_evolver: SpawnEvolver = _spawn_mock_evolver
-
-
 # evaluate は jax で行う予定で mutate は ollama との通信なので、両方 GIL を開放するため thread で問題ない
 class MockEvolver(Evolver):
-    def __init__(self, config: EvolverConfig):
+    def __init__(self, config: MockEvolverConfig):
         self.islands = config.islands
         self.num_parallel = config.num_parallel
         self.reset_period = config.reset_period
@@ -127,16 +130,18 @@ class MockEvolver(Evolver):
         return lambda: self._profilers.remove(profiler_fn)
 
 
-def _generate_islands(config: IslandsConfig) -> List[Island]:
+class MockIslandConfig(NamedTuple):
+    num_islands: int
+    initial_fn: function.Function
+
+
+def generate_mock_islands(config: MockIslandConfig) -> List[Island]:
     config.initial_fn.evaluate()
     islands: List[Island] = [
         MockIsland(config.initial_fn) for _ in range(config.num_islands)
     ]
     # TODO: 必要なlistenerの登録など
     return islands
-
-
-generate_islands: GenerateIslands = _generate_islands
 
 
 class MockIsland(Island):

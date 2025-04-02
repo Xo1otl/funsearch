@@ -8,13 +8,13 @@ import textwrap
 from .code_manipulation import *
 
 
-def new_mock_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
-    engine = MockMutationEngine(prompt_comment, docstring)
+def new_py_mutation_engine(prompt_comment: str, docstring: str) -> function.MutationEngine:
+    engine = PyMutationEngine(prompt_comment, docstring)
     engine.use_profiler(profiler.default_fn)
     return engine
 
 
-class MockMutationEngine(function.MutationEngine):
+class PyMutationEngine(function.MutationEngine):
     def __init__(self, prompt_comment: str, docstring: str):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
@@ -33,7 +33,7 @@ class MockMutationEngine(function.MutationEngine):
         prompt = self._construct_prompt(skeletons)
         # これは時間がかかる処理
         answer = self._ask_llm(prompt)
-        fn_code = self._parse_answer(answer, example=str(skeletons[0]))
+        fn_code = self._parse_answer(answer, str(skeletons[0]))
         new_skeleton = function.PyAstSkeleton(fn_code)
         new_fn = fn_list[0].clone(new_skeleton)  # どれcloneしても構わん
         for profiler_fn in self._profilers:
@@ -49,8 +49,7 @@ class MockMutationEngine(function.MutationEngine):
 
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
-You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below as valid Python code, considering the physical meaning and relationships of inputs.
-        
+You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
 
 """{remove_empty_lines(self._prompt_comment)}"""
 
@@ -64,10 +63,13 @@ PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 {''.join(f"{remove_empty_lines(set_fn_name(remove_docstring(str(skeleton)), i))}\n" for i, skeleton in enumerate(skeletons))}
 # Improved version of `equation_v{len(skeletons)-1}`.
-def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """
+def equation_v{len(skeletons)}({extract_fn_header(str(skeletons[0]))}) -> np.ndarray:
+    """ 
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
+    
+
+Implement the function correctly in Python and store the entire function in json field.
 '''
 
         return prompt
@@ -76,10 +78,13 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
         url = "http://ollama:11434/api/generate"
         payload = {
             "prompt": prompt,
-            # "model": "gemma3:12b",
-            "model": "qwen2.5-coder",
+            "model": "gemma3:12b",
+            # "model": "qwen2.5-coder:14b",
             "format": OllamaAnswer.model_json_schema(),
             "stream": False,
+            "options": {
+                "temperature": 1,
+            }
         }
         response = requests.post(url, json=payload)
         response.raise_for_status()
@@ -91,11 +96,11 @@ def equation_v{len(skeletons)}(x: np.ndarray, v: np.ndarray, params: np.ndarray)
 
     def _parse_answer(self, answer: str, example: str) -> str:
         answer = extract_last_function(answer)  # 失敗したらそのまま後続に渡される
-        answer = fix_wrong_escape(answer)
         answer = answer.replace('```', '')
         answer = fix_single_quote_line(answer)
         answer = fix_missing_header_and_ret(answer, example)
         answer = fix_indentation(answer)
+        answer = fix_wrong_escape(answer)
         return answer
 
 
