@@ -8,7 +8,7 @@ class DefaultFunctionProps(NamedTuple):
     evaluator: 'Evaluator'
 
 
-# mock のつもりで書いてたけど完成したので default にした
+# setter がなく clone によってのみ値が変更できる immutable な設計なので安心して使い回せる
 class DefaultFunction(Function):
     def __init__(self, props: DefaultFunctionProps):
         self._score = None
