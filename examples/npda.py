@@ -1,5 +1,6 @@
 from funsearch import function
 from funsearch import llmsr
+from typing import List
 from dataclasses import dataclass
 import jax
 import jax.numpy as np
@@ -42,7 +43,7 @@ def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> n
     return params[0] * width + params[1] * wavelength + params[2]
 
 
-def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
+def lbfgs_evaluator(skeleton: function.Skeleton[(np.ndarray, np.ndarray, np.ndarray)], arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
     width, wavelength = inputs[:, 0], inputs[:, 1]
@@ -72,7 +73,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
 
 def main():
     # 必要なデータのロード
-    evaluation_inputs = []
+    evaluation_inputs: List[EvaluatorArg] = []
     data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
     for data_file in data_files:
         df = pd.read_csv(

@@ -13,7 +13,7 @@ def test_mock():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(
+    props = function.DefaultFunctionProps(
         mock_py_skeleton, ["A" * 10], evaluator)
     functions: List[function.Function] = [
         function.DefaultFunction(props) for _ in range(10)]

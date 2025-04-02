@@ -89,7 +89,7 @@ def test_py_ast_skeleton():
     inputs = np.stack([x1, x2, x3], axis=1)
     outputs = actual_function(x1, x2, x3)
     arg = EvaluatorArg(inputs, outputs)
-    props = function.FunctionProps(
+    props = function.DefaultFunctionProps(
         py_ast_skeleton, [arg], lbfgs_evaluator)
     # props = function.FunctionProps(py_ast_skeleton, [arg], adam_evaluator)
     fn = function.DefaultFunction(props)

@@ -13,7 +13,8 @@ def test_evolver():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(mock_py_skeleton, ["A" * 10], evaluator)
+    props = function.DefaultFunctionProps(
+        mock_py_skeleton, ["A" * 10], evaluator)
     initial_fn = function.DefaultFunction(props)
     initial_fn.use_profiler(profiler.default_fn)
 

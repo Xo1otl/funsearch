@@ -1,4 +1,4 @@
-from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple, Any, List
+from typing import Protocol, Callable, NamedTuple, List, Literal, Tuple, Any, List, Never
 from funsearch import profiler
 
 
@@ -22,42 +22,28 @@ class MutationEngine(profiler.Pluggable[MutationEngineEvent], Protocol):
         ...
 
 
-# 1. FunctionProps のインスタンスを作る時 evaluator_arg と evaluator の EvaluatorArg の一致が保証される
-# 2. NewFunction を実装した関数で Function を生成する時、引数の FunctionProps と返り値の Function に EvaluatorArg が渡される
-# 3. FunctionEvent の型引数に Function の型引数の EvaluatorArg が渡され、subscribe の Event の EvaluatorArg の 一致が保証される
-type NewFunction[EvaluatorArg] = Callable[[
-    FunctionProps[EvaluatorArg]], Function[EvaluatorArg]]
-
-
-class FunctionProps[EvaluatorArg](NamedTuple):
-    skeleton: 'Skeleton'
-    evaluation_inputs: List[EvaluatorArg]
-    evaluator: 'Evaluator[EvaluatorArg]'
-
-
 # Evaluateの処理は時間がかかるため、処理の前後でイベントを発火する
-class OnEvaluate[EvaluatorArg](NamedTuple):
+class OnEvaluate(NamedTuple):
     type: Literal["on_evaluate"]
-    payload: List[EvaluatorArg]
+    payload: List
 
 
-class OnEvaluated[EvaluatorArg](NamedTuple):
+class OnEvaluated(NamedTuple):
     type: Literal["on_evaluated"]
-    payload: Tuple[List[EvaluatorArg], 'FunctionScore']
+    payload: Tuple[List, 'FunctionScore']
 
 
-type FunctionEvent[EvaluatorArg] = OnEvaluate[EvaluatorArg] | OnEvaluated[EvaluatorArg]
+type FunctionEvent = OnEvaluate | OnEvaluated
 
 
 # Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
 # それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
-# TODO: これも generic にしたいが、さすがにだるくて半分あきらめてる
-class Skeleton(Protocol):
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+class Skeleton[**P](Protocol):
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
         ...
 
 
-class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Protocol):
+class Function(profiler.Pluggable[FunctionEvent], Protocol):
     def signature(self) -> 'Signature':
         ...
 
@@ -85,8 +71,7 @@ class Function[EvaluatorArg](profiler.Pluggable[FunctionEvent[EvaluatorArg]], Pr
         ...
 
 
-type Evaluator[EvaluatorArg] = Callable[[
-    Skeleton, EvaluatorArg], 'FunctionScore']
+type Evaluator[T, **P] = Callable[[Skeleton[P], T], 'FunctionScore']
 type FunctionScore = float
 
 type Signature = str

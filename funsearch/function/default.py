@@ -2,10 +2,15 @@ from .domain import *
 import copy
 
 
+class DefaultFunctionProps(NamedTuple):
+    skeleton: 'Skeleton'
+    evaluation_inputs: List
+    evaluator: 'Evaluator'
 
-# mock のつもりで書いたけど完成したので default にした
-class DefaultFunction[EvaluatorArg](Function[EvaluatorArg]):
-    def __init__(self, props: FunctionProps[EvaluatorArg]):
+
+# mock のつもりで書いてたけど完成したので default にした
+class DefaultFunction(Function):
+    def __init__(self, props: DefaultFunctionProps):
         self._score = None
         self._skeleton = props.skeleton
         self._evaluator = props.evaluator

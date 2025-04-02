@@ -11,7 +11,7 @@ def test_mock_evolver():
         score = skeleton(1, 3) / len(arg)
         return score
 
-    props = function.FunctionProps(
+    props = function.DefaultFunctionProps(
         mock_py_skeleton, ["A" * 10], evaluator)
     initial_fn = function.DefaultFunction(props)
 

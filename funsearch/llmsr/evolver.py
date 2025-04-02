@@ -1,4 +1,4 @@
-from typing import Callable, NamedTuple, List
+from typing import Callable, NamedTuple, List, Any
 from funsearch import profiler
 from funsearch import archipelago
 from funsearch import function
@@ -8,10 +8,10 @@ from .py_mutation_engine import PyMutationEngine
 
 
 # TODO: ここでジェネリスクで evaluator_arg とか equation_arg の型保証できそう
-class EvolverConfig(NamedTuple):
-    equation: Callable
-    evaluation_inputs: List
-    evaluator: function.Evaluator
+class EvolverConfig[T, **P](NamedTuple):
+    equation: Callable[P, Any]
+    evaluation_inputs: List[T]
+    evaluator: function.Evaluator[T, P]
     prompt_comment: str
     profiler_fn: profiler.ProfilerFn = profiler.default_fn
     num_islands: int = 10
@@ -27,8 +27,11 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
             type(config.equation)))
     src = inspect.getsource(config.equation)
     py_ast_skeleton = function.PyAstSkeleton(src)
-    function_props = function.FunctionProps(
-        py_ast_skeleton, config.evaluation_inputs, config.evaluator)
+    function_props = function.DefaultFunctionProps(
+        py_ast_skeleton,
+        config.evaluation_inputs,
+        config.evaluator
+    )
     initial_fn = function.DefaultFunction(function_props)
     initial_fn.use_profiler(config.profiler_fn)
     print(f"""\
