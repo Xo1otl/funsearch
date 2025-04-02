@@ -91,11 +91,11 @@ def main():
     function_props = function.FunctionProps(
         py_ast_skeleton, evaluation_inputs, lbfgs_evaluator)
     initial_fn = function.new_default_function(function_props)
-# prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
+
+    # mutation engine の準備
     prompt_comment_oscillator1 = """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
-"""
-    # mutation engine の準備
+"""  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
     mutation_engine = llmsr.new_py_mutation_engine(
         prompt_comment=prompt_comment_oscillator1,
         docstring=docstring or "",)
