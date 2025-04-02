@@ -7,7 +7,6 @@ import inspect
 from .py_mutation_engine import PyMutationEngine
 
 
-# TODO: ここでジェネリスクで evaluator_arg とか equation_arg の型保証できそう
 class EvolverConfig[**P, R, T](NamedTuple):
     equation: Callable[P, R]
     evaluation_inputs: List[T]
@@ -68,7 +67,8 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
         num_selected_clusters=config.num_selected_clusters,
         initial_fn=initial_fn,
         mutation_engine=mutation_engine,
-        profiler_fn=config.profiler_fn,
+        island_profiler_fn=config.profiler_fn,
+        cluster_profiler_fn=config.profiler_fn,
     )
     print(f"""\
 島の初期状態を設定しました。
@@ -81,7 +81,6 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
         island_config=islands_config,
         num_parallel=config.num_parallel,
         reset_period=config.reset_period,
-        profiler_fn=config.profiler_fn,
     )
 
     print(f"""\
@@ -91,4 +90,6 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
 """)
 
     evolver = cluster.Evolver(evolver_config)
+    evolver.use_profiler(config.profiler_fn)
+
     return evolver

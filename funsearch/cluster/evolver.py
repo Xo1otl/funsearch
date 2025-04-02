@@ -39,13 +39,13 @@ class EvolverConfig(NamedTuple):
     island_config: 'IslandConfig'
     num_parallel: int
     reset_period: int
-    profiler_fn: profiler.ProfilerFn
 
 
 # evaluate は jax で行う予定で mutate は ollama との通信なので、両方 GIL を開放するため thread で問題ない
 class Evolver(archipelago.Evolver):
     def __init__(self, config: EvolverConfig):
-        self.islands = generate_islands(config.island_config)
+        self.island_config = config.island_config
+        self.islands = generate_islands(self.island_config)
         self._mutation_engine = config.island_config.mutation_engine
         self._num_selected_clusters = config.island_config.num_selected_clusters
         self.num_parallel = config.num_parallel
@@ -55,8 +55,6 @@ class Evolver(archipelago.Evolver):
         self._thread: threading.Thread | None = None
         self.best_island: archipelago.Island = max(
             self.islands, key=lambda island: island.best_fn().score())
-        self.config = config
-        self.use_profiler(config.profiler_fn)
 
     def _reset_islands(self):
         # 一番良い島を取得
@@ -74,10 +72,18 @@ class Evolver(archipelago.Evolver):
 
         # 一番良い島の best_fn とスコアを使って、新しい島を生成する
         best_fn = best_island.best_fn()
-        new_islands: List[archipelago.Island] = [
-            # FIXME: cluster の mock island は archipelago の mock island と違って改造してるうちにほぼ完成した実装だから名前を変えたほうがいい
-            Island(initial_fn=best_fn.clone(), mutation_engine=self._mutation_engine, num_selected_clusters=self._num_selected_clusters, cluster_profiler_fn=self.config.profiler_fn) for _ in to_reset
-        ]
+
+        new_islands: List[archipelago.Island] = [Island(
+            initial_fn=best_fn.clone(),
+            mutation_engine=self._mutation_engine,
+            num_selected_clusters=self._num_selected_clusters,
+            cluster_profiler_fn=self.island_config.cluster_profiler_fn
+        ) for _ in to_reset]
+
+        # 新しい島にもプロファイラを登録する必要がある (忘れそうでやばい)
+        if self.island_config.island_profiler_fn is not None:
+            for island in new_islands:
+                island.use_profiler(self.island_config.island_profiler_fn)
 
         removed_islands = []
         new_iter = iter(new_islands)
@@ -161,18 +167,19 @@ class IslandConfig(NamedTuple):
     num_selected_clusters: int
     initial_fn: function.Function
     mutation_engine: function.MutationEngine
-    profiler_fn: profiler.ProfilerFn | None = None
+    island_profiler_fn: profiler.ProfilerFn | None = None
+    cluster_profiler_fn: profiler.ProfilerFn | None = None
 
 
 def generate_islands(config: IslandConfig) -> List[archipelago.Island]:
     config.initial_fn.evaluate()
     islands: List[archipelago.Island] = []
-    for _ in range(10):
+    for _ in range(config.num_islands):
         island = Island(
-            config.initial_fn, config.mutation_engine, config.num_selected_clusters, config.profiler_fn
+            config.initial_fn, config.mutation_engine, config.num_selected_clusters, config.cluster_profiler_fn
         )
-        if config.profiler_fn is not None:
-            island.use_profiler(config.profiler_fn)
+        if config.island_profiler_fn is not None:
+            island.use_profiler(config.island_profiler_fn)
         islands.append(island)
     return islands
 
@@ -185,7 +192,10 @@ class Island(archipelago.Island):
         self.num_selected_clusters = num_selected_clusters
         self._cluster_profiler_fn = cluster_profiler_fn
         self.clusters: dict[str, Cluster] = {
-            initial_fn.signature(): DefaultCluster(initial_fn, self._cluster_profiler_fn)}
+            initial_fn.signature(): DefaultCluster(initial_fn)}
+        if self._cluster_profiler_fn is not None:
+            for cluster in self.clusters.values():
+                cluster.use_profiler(self._cluster_profiler_fn)
         self._num_fns = 0
         self._cluster_sampling_temperature_init = 0.1
         self._cluster_sampling_temperature_period = 30_000
@@ -223,8 +233,10 @@ class Island(archipelago.Island):
     def _move_to_cluster(self, fn: function.Function):
         signature = fn.signature()
         if signature not in self.clusters:
-            self.clusters[signature] = DefaultCluster(
-                initial_fn=fn, profiler_fn=self._cluster_profiler_fn)
+            new_cluster = DefaultCluster(initial_fn=fn)
+            if self._cluster_profiler_fn is not None:
+                new_cluster.use_profiler(self._cluster_profiler_fn)
+            self.clusters[signature] = new_cluster
         else:
             self.clusters[signature].add_fn(fn)
         self._num_fns += 1
@@ -260,11 +272,9 @@ class Island(archipelago.Island):
 
 
 class DefaultCluster(Cluster):
-    def __init__(self, initial_fn: function.Function, profiler_fn: profiler.ProfilerFn | None) -> None:
+    def __init__(self, initial_fn: function.Function) -> None:
         self._functions = [initial_fn]
         self._profilers: List[Callable[[ClusterEvent], None]] = []
-        if profiler_fn is not None:
-            self.use_profiler(profiler_fn)
 
     def select_fn(self) -> function.Function:
         # 各関数の skeleton() からソースコードの長さを取得
