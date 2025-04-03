@@ -59,7 +59,11 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
     (final_params, _), _ = jax.lax.scan(
         body_fn, (init_params, opt_state), None, length=30)
 
-    return float(-loss_fn(final_params))
+    loss = float(-loss_fn(final_params))
+    if np.isnan(loss) or np.isinf(loss):
+        raise ValueError("loss is inf or nan")
+    else:
+        return -loss
 
 
 def main():

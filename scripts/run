@@ -1,8 +1,0 @@
-#!/usr/bin/fish
-
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
-set ws_root "/workspaces/mictlan/research/funsearch"
-set timestamp (date +%Y%m%d_%H%M%S)
-set output_dir "$ws_root/out/npda_$timestamp"
-mkdir -p $output_dir
-nohup python "$ws_root/examples/npda.py" > "$output_dir/stdout.log" 2> "$output_dir/stderr.log" &

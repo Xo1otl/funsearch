@@ -241,3 +241,143 @@ def fix_indentation(code: str) -> str:
             fixed_line = expanded_line
         new_lines.append(fixed_line)
     return "\n".join(new_lines)
+
+
+def force_squash_return_statement(code: str) -> str:
+    """
+    Finds 'return' statements and forcefully merges subsequent lines
+    with equal or greater indentation into a single line, regardless of
+    parentheses or backslashes. Skips empty lines and comments during merge.
+
+    Warning: This can significantly reduce readability for valid multi-line returns.
+             It assumes the parsing error is related to the multi-line return itself.
+    """
+    lines = code.splitlines()
+    new_code_lines = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped_line = line.lstrip()
+
+        if stripped_line.startswith("return "):
+            return_line_indent_str = line[:len(line) - len(stripped_line)]
+            start_indent_level = len(return_line_indent_str)
+            # Start collecting parts, beginning with the 'return' line content itself
+            statement_parts = [stripped_line]
+            last_successful_line_index = i
+            j = i + 1
+            while j < n:
+                next_line = lines[j]
+                next_stripped = next_line.lstrip()
+
+                # Skip empty lines
+                if not next_stripped:
+                    j += 1
+                    continue
+                # Stop merging if we hit a comment line within the potential continuation
+                # (Could also choose to skip comments, but stopping is safer)
+                if next_stripped.startswith("#"):
+                    break
+
+                next_indent_level = len(next_line) - len(next_stripped)
+
+                # Force merge if next line is indented same or more
+                if next_indent_level >= start_indent_level:
+                    # Append the content (stripped of its own indent)
+                    statement_parts.append(next_stripped)
+                    last_successful_line_index = j
+                    j += 1
+                else:
+                    # Indent is less, the multi-line statement ends
+                    break
+
+            # Combine parts with spaces (remove extra spaces later)
+            # Use strip() on each part to avoid joining leading/trailing whitespace
+            combined_statement = " ".join(part.strip() for part in statement_parts)
+            # Clean up potential excessive internal spacing
+            combined_statement = re.sub(r'\s{2,}', ' ', combined_statement)
+            new_code_lines.append(return_line_indent_str + combined_statement)
+            i = last_successful_line_index + 1 # Move index past the merged lines
+        else:
+            # Not a return statement, add line as is
+            new_code_lines.append(line)
+            i += 1
+
+    return "\n".join(new_code_lines)
+
+
+def force_squash_assignment_statement(code: str) -> str:
+    """
+    Finds assignment statements ('=') and forcefully merges subsequent lines
+    with STRICTLY GREATER indentation into a single line.
+    Skips empty lines and comments during merge. Only triggers if '=' is likely
+    an assignment operator.
+
+    This version is safer as it avoids merging subsequent statements at the
+    same indent level, focusing on continuations indicated by increased indent.
+    """
+    lines = code.splitlines()
+    new_code_lines = []
+    i = 0
+    n = len(lines)
+    # Regex to find an assignment operator '=', not part of comparison operators
+    assignment_regex = re.compile(r'(?<![=<>!])=(?!=)')
+
+    while i < n:
+        line = lines[i]
+        stripped_line = line.lstrip()
+
+        is_potential_assignment_start = (
+            not stripped_line.startswith("#") and
+            assignment_regex.search(stripped_line)
+        )
+
+        if is_potential_assignment_start:
+            assign_line_indent_str = line[:len(line) - len(stripped_line)]
+            start_indent_level = len(assign_line_indent_str)
+
+            statement_parts = [stripped_line]
+            last_successful_line_index = i
+            j = i + 1
+            while j < n:
+                next_line = lines[j]
+                next_stripped = next_line.lstrip()
+
+                # Skip empty lines
+                if not next_stripped:
+                    j += 1
+                    continue
+                # Stop merging if we hit a comment line
+                if next_stripped.startswith("#"):
+                    break
+
+                next_indent_level = len(next_line) - len(next_stripped)
+
+                # --- MODIFIED CONDITION ---
+                # Only merge if next line is indented STRICTLY MORE
+                if next_indent_level > start_indent_level:
+                    statement_parts.append(next_stripped)
+                    last_successful_line_index = j
+                    j += 1
+                else:
+                    # Indent is same or less, the potential multi-line statement ends
+                    break
+            # --- END MODIFICATION ---
+
+            # Combine only if more than one part was collected (i.e., merging happened)
+            if len(statement_parts) > 1:
+                combined_statement = " ".join(part.strip() for part in statement_parts)
+                combined_statement = re.sub(r'\s{2,}', ' ', combined_statement)
+                new_code_lines.append(assign_line_indent_str + combined_statement)
+                i = last_successful_line_index + 1 # Move index past the merged lines
+            else:
+                # No lines were merged, just add the original line
+                new_code_lines.append(line)
+                i += 1
+        else:
+            # Not a mergeable assignment start, add line as is
+            new_code_lines.append(line)
+            i += 1
+
+    return "\n".join(new_code_lines)

@@ -17,27 +17,29 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
-def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for acceleration in a damped nonlinear oscillator
+def equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for bacterial growth rate
 
     Args:
-        x: A numpy array representing observations of current position.
-        v: A numpy array representing observations of velocity.
+        b: A numpy array representing observations of population density of the bacterial species.
+        s: A numpy array representing observations of substrate concentration.
+        temp: A numpy array representing observations of temperature.
+        pH: A numpy array representing observations of pH level.
         params: Array of numeric constants or parameters to be optimized
 
     Return:
-        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.
     """
-    return params[0] * x + params[1] * v + params[2]
+    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]
 
 
-def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
+def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
-    x, v = inputs[:, 0], inputs[:, 1]
+    b, s, temp, pH = inputs[:, 0], inputs[:, 1], inputs[:, 2], inputs[:, 3]
 
     def loss_fn(params):
-        return np.mean((skeleton(x, v, params) - outputs) ** 2)
+        return np.mean((skeleton(b, s, temp, pH, params) - outputs) ** 2)
 
     solver = optax.lbfgs()
     init_params = np.ones(MAX_NPARAMS)
@@ -66,10 +68,11 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
 def load_inputs():
     # 必要なデータのロード
     evaluation_inputs = []
-    data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
+    # 論文の方では探索では train.csv しか使ってなかった。スコアパターンとかかいとるからてっきり全部計算するのかおもた
+    data_files = ['train.csv']
     for data_file in data_files:
         df = pd.read_csv(
-            f'/workspaces/mictlan/research/funsearch/data/oscillator1/{data_file}')
+            f'/workspaces/mictlan/research/funsearch/data/bactgrow/{data_file}')
         data = np.array(df)
         inputs = data[:, :-1]
         outputs = data[:, -1].reshape(-1)
@@ -89,7 +92,7 @@ def main():
     inputs = load_inputs()
 
     prompt_comment = """
-Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
+Find the mathematical function skeleton that represents E. Coli bacterial growth rate, given data on population density, substrate concentration, temperature, and pH level.
 """  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
 
     evolver = llmsr.spawn_evolver(llmsr.EvolverConfig(

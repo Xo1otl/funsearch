@@ -55,12 +55,14 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * island 内の cluster のボルツマン選択アルゴリズム
 * cluster 内の function の選択アルゴリズム (多分もう完成してる)
 * jax.scipy にも minimize がある jaxopt とかいうのもあるからいろいろ試そう
-* [jaxopt](https://jaxopt.github.io/stable/_autosummary/jaxopt.ScipyMinimize.html) 多分adamよりコレのほうが良さげ
-* イベントの型に島のidとか含めるようにしたら、更に詳細な profiler が作れるようになる
+* [jaxopt](https://jaxopt.github.io/stable/_autosummary/jaxopt.ScipyMinimize.html) 多分adamよりコレのほうが良さげ、かと思ったらオワコンで、optaxに等号されるらしい
+* イベントの型に島のidとか含めるようにしたら、更に詳細な profiler が作れるようになると思ったけど、普通にid()関数でアドレスとればそれでおk
 
 # Idea
 * 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう
 * 各テストに対する合否分布や、プログラムの構造でクラスタリングしてみてもいい気がする
+* 分極反転幅構造だけでなく、材料の屈折率の波長依存性もコントロールが可能であり、それの探索でLLM-SRできるかもしれない。どんな波長依存性を持つ材料を使えばいいのかについて探索できそう。
+* ??? 「材料の波長依存性については量子井戸とかを工夫してバンドギャップ内にピークが来るように...」
 
 # Memo
 * 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる
@@ -107,7 +109,14 @@ def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
 
 ```
 
-## 改良版プロンプト例
+## 改良版プロンプト (最初と最後に強い主張を入れると言うこと聞きがち)
+
+### 改良点
+* docstring をテンプレに設定する、元のコードで必死にパースして設定してたのが不要になり、docstrin かぶりもなくなって複数バージョンあってもすっきり
+* 最近の llm は structured output できるのでそれを利用
+* 割とコメントに考え書いてくれるし docstring は内容が被りがちなので older versions から削除
+
+### 例
 ```
 You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
 
@@ -145,5 +154,5 @@ def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """
     
 
-Implement the function correctly in Python and store the entire function in json field.
+Implement `equation_v2` by **modifying its calculation logic** for improvement, and store the function in the json field.
 ```

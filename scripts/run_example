@@ -1,0 +1,15 @@
+#!/usr/bin/fish
+
+set ws_root "/workspaces/mictlan/research/funsearch"
+set timestamp (date +%Y%m%d_%H%M%S)
+
+# 引数がなければデフォルト値を設定
+if test -z "$argv[1]"
+  set script_name "npda"
+else
+  set script_name "$argv[1]"
+end
+
+set output_dir "$ws_root/examples/logs/$script_name"_"$timestamp"
+mkdir -p $output_dir
+nohup python "$ws_root/examples/$script_name.py" > "$output_dir/stdout.log" 2> "$output_dir/stderr.log" &

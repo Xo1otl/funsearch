@@ -45,15 +45,17 @@ class PyMutationEngine(function.MutationEngine):
         url = "http://ollama:11434/api/generate"
         payload = {
             "prompt": prompt,
-            "model": "gemma3:12b",
-            # "model": "qwen2.5-coder:14b",
+            # "model": "gemma3:12b", # メモリリークする
+            # "model": "phi4",
+            "model": "qwen2.5-coder:14b",
             "format": ResponseSchema.model_json_schema(),
             "stream": False,
-            "options": {
-                "temperature": 1,
-            }
+            # モデルによってはエラー爆増する
+            # "options": {
+            #     "temperature": 1,  # ちょっと高めがいい気がする
+            # }
         }
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         generated_text = result["response"]
@@ -117,6 +119,8 @@ Implement `equation_v{len(skeletons)}` by **modifying its calculation logic** fo
         answer = fix_missing_header_and_ret(answer, example)
         answer = fix_indentation(answer)
         answer = fix_wrong_escape(answer)
+        answer = force_squash_assignment_statement(answer)
+        answer = force_squash_return_statement(answer)
         return answer
 
     def use_profiler(self, profiler_fn):

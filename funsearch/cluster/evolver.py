@@ -32,7 +32,9 @@ import threading
 import concurrent.futures
 import traceback
 from typing import List, NamedTuple
+import jax
 import numpy as onp
+import scipy.special
 
 
 class EvolverConfig(NamedTuple):
@@ -133,6 +135,8 @@ class Evolver(archipelago.Evolver):
             # TODO: 並列で処理するけど、全部一斉に終わらないと次に行かない設計になってる、ちょっと効率悪いから、時間があれば直そう
             # Go の context みたいなのがあれば安全に実装できそうだが、完璧な実装はかなり大変そう
             self._evolve_islands()
+            # FIXME: monkey patch なのでもっとましな設定方法や evaluate で完結する対処法ないか考える
+            jax.clear_caches()  # これがないとメモリリークする
             # Check if it's time to reset low-scoring islands.
             if time.time() - last_reset_time >= self.reset_period:
                 self._reset_islands()
@@ -199,34 +203,45 @@ class Island(archipelago.Island):
         self._cluster_sampling_temperature_period = 30_000
 
     def _select_clusters(self) -> List[Cluster]:
+        """
+        スコアと温度に基づいてクラスタを選択する。
+        非有限スコアはエラーとし、scipy.special.softmax を使用。
+        """
         available_clusters = list(self.clusters.values())
-        num_to_select = min(
-            self._num_selected_clusters,
-            len(available_clusters)
-        )
+        num_clusters = len(available_clusters)
+        num_to_select = min(self._num_selected_clusters, num_clusters)
+
+        if num_to_select <= 0:
+            raise ValueError("No clusters available for selection.")
 
         scores = onp.array([cluster.best_fn().score()
-                           for cluster in available_clusters])
+                           for cluster in available_clusters], dtype=float)
+        if not onp.all(onp.isfinite(scores)):
+            problematic_indice = onp.where(~onp.isfinite(scores))[0]
+            problematic_code = str(
+                available_clusters[problematic_indice].best_fn().skeleton())
+            raise ValueError(
+                f"Non-finite scores detected at indice {problematic_indice}: {problematic_code}")
 
         period = self._cluster_sampling_temperature_period
         temperature = self._cluster_sampling_temperature_init * \
             (1 - (self._num_fns % period) / period)
+        safe_temperature = max(temperature, onp.finfo(
+            float).tiny)
 
-        weights = onp.exp(scores / temperature)
+        logits = scores / safe_temperature
+        probabilities = scipy.special.softmax(logits, axis=-1)
 
-        probabilities = weights / onp.sum(weights)
         try:
             selected_indices = onp.random.choice(
-                len(available_clusters), size=num_to_select, replace=False, p=probabilities)
-        except Exception as e:
-            abnormal_fns = [str(cluster.best_fn().skeleton()) for cluster, score in zip(
-                available_clusters, scores) if not onp.isfinite(score)]
-            raise Exception(
-                f"Error during cluster sampling. num_fns: {self._num_fns}. Abnormal fns: {abnormal_fns}"
+                num_clusters, size=num_to_select, replace=False, p=probabilities
+            )
+            return [available_clusters[i] for i in selected_indices]
+        except ValueError as e:
+            prob_sum = onp.sum(probabilities)
+            raise ValueError(
+                f"Cluster selection failed in np.random.choice. Check probabilities (sum={prob_sum}, has_nan={onp.isnan(probabilities).any()}). Original error: {e}"
             ) from e
-        selected_clusters = [available_clusters[i] for i in selected_indices]
-
-        return selected_clusters
 
     def _move_to_cluster(self, fn: function.Function):
         signature = fn.signature()

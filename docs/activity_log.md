@@ -261,3 +261,16 @@ id ood train それぞれでスコアが何だったのかも知りたい Profil
 * なんか oscillar1 で evaluate の結果がLLM-SRと違うっぽいので確かめる
 
 リファクタリングを行った、なんも進んで無いけど今後やりやすくはなったはず
+
+# 4月3日
+LLM-SRのほうではtrain.csvしか読み込んでなかった、bactgrowでも比較したけどevaluateの収束値はほぼ一緒
+
+docker ホストが落ちるのがメモリリークが原因とわかった ollama と jax 両方がリークしてる
+
+[ollama のメモリリーク](https://github.com/ollama/ollama/issues/10040)は issue が立ってて自分と同じ docker ollama で発生してるらしいしかも gemma3 だけ
+
+それっぽい profiler を作った
+
+## TODO
+* best island の更新時に score を表示
+* ollama アプデ
