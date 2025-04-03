@@ -6,6 +6,8 @@ import optax
 from funsearch import function
 from funsearch import profiler
 
+jax.config.update('jax_platform_name', 'cpu')
+
 MAX_NPARAMS = 10
 
 
@@ -51,7 +53,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton, arg: EvaluatorArg) -> float:
 
     (final_params, _), _ = jax.lax.scan(
         # 試した感じ10回で大体みつけてくるけど、念のため30回
-        body_fn, (init_params, opt_state), None, length=10)
+        body_fn, (init_params, opt_state), None, length=30)
 
     return float(-loss_fn(final_params))
 

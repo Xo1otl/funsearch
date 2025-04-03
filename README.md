@@ -106,3 +106,44 @@ def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """Improved version of `equation_v0`.    """
 
 ```
+
+## 改良版プロンプト例
+```
+You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
+
+"""
+Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
+"""
+
+import numpy as np
+import scipy
+
+# Initialize parameters
+MAX_NPARAMS = 10
+PRAMS_INIT = [1.0] * MAX_NPARAMS
+
+
+def equation_v0(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    return params[0] * x + params[1] * v + params[2]
+
+def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    acceleration = params[0] * x - params[1] * v - params[2] * x**3
+    return acceleration
+
+# Improved version of `equation_v1`.
+def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ 
+    Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    
+
+Implement the function correctly in Python and store the entire function in json field.
+```

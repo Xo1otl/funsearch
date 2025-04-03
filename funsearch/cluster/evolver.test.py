@@ -9,7 +9,6 @@ def test_evolver():
     mock_py_skeleton = function.MockPythonSkeleton()
 
     def evaluator(skeleton: function.Skeleton, arg: str):
-        time.sleep(1)
         score = skeleton(1, 3) / len(arg)
         return score
 
@@ -22,8 +21,8 @@ def test_evolver():
     engine.use_profiler(profiler.default_fn)
 
     config = cluster.IslandConfig(
-        num_islands=3,
-        num_selected_clusters=3,
+        num_islands=4,
+        num_selected_clusters=2,
         initial_fn=initial_fn,
         mutation_engine=engine,
     )
@@ -32,7 +31,7 @@ def test_evolver():
     config = archipelago.MockEvolverConfig(
         islands=islands,
         num_parallel=3,
-        reset_period=5
+        reset_period=1
     )
 
     evolver = archipelago.spawn_mock_evolver(config)

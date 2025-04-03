@@ -11,7 +11,6 @@ class MockMutationEngine(MutationEngine):
     def mutate(self, fn_list: List['Function']):
         for profiler_fn in self._profilers:
             profiler_fn(OnMutate(type="on_mutate", payload=fn_list))
-        time.sleep(3)
         # ここでは evaluate まではしない予定なので mock でも skeleton を更新して未評価にして関数を返す
         new_fn = fn_list[0].clone(fn_list[0].skeleton())
         for profiler_fn in self._profilers:

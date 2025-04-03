@@ -2,6 +2,7 @@
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 set ws_root "/workspaces/mictlan/research/funsearch"
-set symbol (date +%Y%m%d_%H%M%S)
-mkdir -p out/npda
-nohup python "$ws_root/funsearch/llm/py_mutation_engine.test.py" > "$ws_root/out/npda/out_$symbol.log" 2> "$ws_root/out/npda/err_$symbol.log" &
+set timestamp (date +%Y%m%d_%H%M%S)
+set output_dir "$ws_root/out/npda_$timestamp"
+mkdir -p $output_dir
+nohup python "$ws_root/examples/npda.py" > "$output_dir/stdout.log" 2> "$output_dir/stderr.log" &

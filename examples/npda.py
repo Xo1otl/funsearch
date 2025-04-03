@@ -6,19 +6,9 @@ import jax
 import jax.numpy as np
 import optax
 import pandas as pd
-import os
 
-
-def check_jax_env():
-    if os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").lower() != "false":
-        raise EnvironmentError("Set XLA_PYTHON_CLIENT_PREALLOCATE to 'false'.")
-
-
-check_jax_env()
-
-gpus = [d for d in jax.devices() if d.platform == "gpu"]
-if gpus:
-    print(f"Using GPU: {gpus[0]}")
+# evaluate で gpu 使ってみたら時々バグって ollama が止まるし、計算量的に普通に cpu のほうが速い
+jax.config.update('jax_platform_name', 'cpu')
 
 MAX_NPARAMS = 10
 

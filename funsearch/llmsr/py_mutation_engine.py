@@ -1,5 +1,4 @@
 from funsearch import function
-from funsearch import profiler
 from typing import List, Callable
 from google import genai
 from pydantic import BaseModel
@@ -86,7 +85,7 @@ class PyMutationEngine(function.MutationEngine):
 
     def _construct_prompt(self, skeletons: List[function.Skeleton]) -> str:
         prompt = f'''
-You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by changing one or more structures from previous versions to discover a more physically accurate solution.
+You are a helpful assistant exploring scientific mathematical functions. Complete the Python function by **changing one or more structures** from previous versions to discover a more physically accurate solution.
 
 """{remove_empty_lines(self._prompt_comment)}"""
 
@@ -104,9 +103,9 @@ def equation_v{len(skeletons)}({extract_fn_header(str(skeletons[0]))}) -> np.nda
     """ 
 {textwrap.indent(self._docstring.strip(), '    ')}
     """
-    
+ 
 
-Implement the function correctly in Python and store the entire function in json field.
+Implement `equation_v{len(skeletons)}` by **modifying its calculation logic** for improvement, and store the function in the json field.
 '''
 
         return prompt

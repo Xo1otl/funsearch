@@ -80,10 +80,9 @@ class Evolver(archipelago.Evolver):
             cluster_profiler_fn=self.island_config.cluster_profiler_fn
         ) for _ in to_reset]
 
-        # 新しい島にもプロファイラを登録する必要がある (忘れそうでやばい)
-        if self.island_config.island_profiler_fn is not None:
-            for island in new_islands:
-                island.use_profiler(self.island_config.island_profiler_fn)
+        # 新しい島にもプロファイラを登録する必要がある
+        for island in new_islands:
+            island.use_profiler(self.island_config.island_profiler_fn)
 
         removed_islands = []
         new_iter = iter(new_islands)
@@ -111,7 +110,8 @@ class Evolver(archipelago.Evolver):
             for future in concurrent.futures.as_completed(future_to_island):
                 island = future_to_island[future]
                 try:
-                    _ = future.result()
+                    # 1分以上かかる場合は強制終了 (ollama が最大でも20秒 evaluate も40秒もかかったらおかしい)
+                    _ = future.result(timeout=60)
                 except Exception as e:
                     # In a mock, simply ignore mutation errors.
                     print(f"Error during mutation: {e}", file=sys.stderr)
@@ -167,8 +167,8 @@ class IslandConfig(NamedTuple):
     num_selected_clusters: int
     initial_fn: function.Function
     mutation_engine: function.MutationEngine
-    island_profiler_fn: profiler.ProfilerFn | None = None
-    cluster_profiler_fn: profiler.ProfilerFn | None = None
+    island_profiler_fn: profiler.ProfilerFn = profiler.default_fn
+    cluster_profiler_fn: profiler.ProfilerFn = profiler.default_fn
 
 
 def generate_islands(config: IslandConfig) -> List[archipelago.Island]:
@@ -178,24 +178,22 @@ def generate_islands(config: IslandConfig) -> List[archipelago.Island]:
         island = Island(
             config.initial_fn, config.mutation_engine, config.num_selected_clusters, config.cluster_profiler_fn
         )
-        if config.island_profiler_fn is not None:
-            island.use_profiler(config.island_profiler_fn)
+        island.use_profiler(config.island_profiler_fn)
         islands.append(island)
     return islands
 
 
 class Island(archipelago.Island):
-    def __init__(self, initial_fn: function.Function, mutation_engine: function.MutationEngine, num_selected_clusters: int, cluster_profiler_fn: profiler.ProfilerFn | None):
+    def __init__(self, initial_fn: function.Function, mutation_engine: function.MutationEngine, num_selected_clusters: int, cluster_profiler_fn: profiler.ProfilerFn):
         self._best_fn = initial_fn
         self._mutation_engine = mutation_engine
         self._profilers: List[Callable[[archipelago.IslandEvent], None]] = []
-        self.num_selected_clusters = num_selected_clusters
+        self._num_selected_clusters = num_selected_clusters
         self._cluster_profiler_fn = cluster_profiler_fn
         self.clusters: dict[str, Cluster] = {
             initial_fn.signature(): DefaultCluster(initial_fn)}
-        if self._cluster_profiler_fn is not None:
-            for cluster in self.clusters.values():
-                cluster.use_profiler(self._cluster_profiler_fn)
+        for cluster in self.clusters.values():
+            cluster.use_profiler(self._cluster_profiler_fn)
         self._num_fns = 0
         self._cluster_sampling_temperature_init = 0.1
         self._cluster_sampling_temperature_period = 30_000
@@ -203,7 +201,7 @@ class Island(archipelago.Island):
     def _select_clusters(self) -> List[Cluster]:
         available_clusters = list(self.clusters.values())
         num_to_select = min(
-            self.num_selected_clusters,
+            self._num_selected_clusters,
             len(available_clusters)
         )
 
@@ -221,7 +219,7 @@ class Island(archipelago.Island):
             selected_indices = onp.random.choice(
                 len(available_clusters), size=num_to_select, replace=False, p=probabilities)
         except Exception as e:
-            abnormal_fns = [str(cluster.best_fn()) for cluster, score in zip(
+            abnormal_fns = [str(cluster.best_fn().skeleton()) for cluster, score in zip(
                 available_clusters, scores) if not onp.isfinite(score)]
             raise Exception(
                 f"Error during cluster sampling. num_fns: {self._num_fns}. Abnormal fns: {abnormal_fns}"
@@ -234,8 +232,7 @@ class Island(archipelago.Island):
         signature = fn.signature()
         if signature not in self.clusters:
             new_cluster = DefaultCluster(initial_fn=fn)
-            if self._cluster_profiler_fn is not None:
-                new_cluster.use_profiler(self._cluster_profiler_fn)
+            new_cluster.use_profiler(self._cluster_profiler_fn)
             self.clusters[signature] = new_cluster
         else:
             self.clusters[signature].add_fn(fn)

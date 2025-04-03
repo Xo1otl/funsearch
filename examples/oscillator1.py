@@ -5,19 +5,8 @@ import jax
 import jax.numpy as np
 import optax
 import pandas as pd
-import os
 
-
-def check_jax_env():
-    if os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").lower() != "false":
-        raise EnvironmentError("Set XLA_PYTHON_CLIENT_PREALLOCATE to 'false'.")
-
-
-check_jax_env()
-
-gpus = [d for d in jax.devices() if d.platform == "gpu"]
-if gpus:
-    print(f"Using GPU: {gpus[0]}")
+jax.config.update('jax_platform_name', 'cpu')
 
 MAX_NPARAMS = 10
 
@@ -91,6 +80,7 @@ Find the mathematical function skeleton that represents acceleration in a damped
         evaluation_inputs=evaluation_inputs,
         evaluator=lbfgs_evaluator,
         prompt_comment=prompt_comment,
+        profiler_fn=llmsr.Profiler().profile,
     ))
 
     evolver.start()
