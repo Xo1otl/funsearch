@@ -63,7 +63,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
     if np.isnan(loss) or np.isinf(loss):
         raise ValueError("loss is inf or nan")
     else:
-        return -loss
+        return loss
 
 
 def main():
