@@ -48,6 +48,7 @@ class PyMutationEngine(function.MutationEngine):
             # "model": "gemma3:12b", # メモリリークする
             # "model": "phi4",
             "model": "qwen2.5-coder:14b",
+            # "model": "hf.co/google/gemma-3-12b-it-qat-q4_0-gguf", # やっぱりメモリリークする
             "format": ResponseSchema.model_json_schema(),
             "stream": False,
             # モデルによってはエラー爆増する

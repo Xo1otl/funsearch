@@ -156,3 +156,53 @@ def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
 
 Implement `equation_v2` by **modifying its calculation logic** for improvement, and store the function in the json field.
 ```
+
+# 発見した公式
+
+## oscillator1
+
+
+## bactgrow
+```
+2025-04-04 08:42:32,545 ThreadPoolExecutor-116_1 | on_evaluated         | Evaluation finished in 1.7998s. Score: -0.0022549720015376806
+2025-04-04 08:42:32,545 ThreadPoolExecutor-116_1 | on_best_fn_improved  | Best function improved (within island)!
+
+==================== Evaluated Function ====================
+def equation_v2(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
+    mu_max = params[0]  # Maximum specific growth rate
+    Ks = params[1]     # Half-saturation constant for substrate
+    Q10_temp = params[2]  # Temperature sensitivity coefficient
+    optimal_temp = params[3]  # Optimal temperature for growth
+    pH_effect_slope = params[4]  # Slope of the effect of pH on growth rate
+    KpH = params[5]     # pH effect constant
+    carrying_capacity = params[6]  # Carrying capacity of environment
+    inhibition_strength = params[7]  # Strength of density-dependent inhibition
+    high_substrate_limit = params[8]  # Maximum substrate concentration that can support full growth rate
+    low_substrate_effectiveness = params[9]
+    
+    # Temperature factor with a sigmoid function for smooth transition around optimal temp, considering Q10 effects
+    temp_factor = 1 / (1 + np.exp(-Q10_temp * ((temp - optimal_temp) / 10)))
+    
+    # pH factor using a Gaussian distribution to better capture the bell-shaped sensitivity around neutral pH, with an offset for lower pH tolerance
+    pH_diff = pH - 7.0
+    pH_factor = np.exp(-((pH_diff / KpH)**2) * (pH_effect_slope + pH_diff**2))
+    
+    # Growth rate calculation incorporating substrate limitations more effectively, with a quadratic term to reflect diminishing returns at high concentrations
+    growth_rate = mu_max * s / (Ks + s + s**2) * temp_factor * pH_factor
+    
+    # Inhibition term considering the density of bacteria and carrying capacity with a sigmoid function for non-linearity, adjusted for steeper inhibition at higher densities
+    inhibition_term = 1 / (1 + np.exp(-inhibition_strength * ((b - carrying_capacity) / carrying_capacity)**2))
+    
+    # Substrate adjustment factor to account for substrate concentration effects on growth, incorporating a Gaussian decay beyond the high_substrate_limit, with an additional exponential term to reflect rapid decline at very low concentrations
+    substrate_adjustment = np.where(s > high_substrate_limit, np.exp(-((s - high_substrate_limit) / (2 * high_substrate_limit))**2), low_substrate_effectiveness + s * (1 - low_substrate_effectiveness) / Ks) * np.exp(-s / (Ks * 50))
+    
+    # Final adjusted growth rate considering all factors
+    final_growth_rate = growth_rate * inhibition_term * substrate_adjustment
+    return final_growth_rate
+------------------------------------------------------------
+Score: -0.0022549720015376806
+============================================================
+```
+
+LLM-SR (Mixtral) は0.0026
+LLM-SR (GPT-3.5) は0.00214

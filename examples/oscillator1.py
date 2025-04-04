@@ -31,6 +31,12 @@ def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     return params[0] * x + params[1] * v + params[2]
 
 
+def found_equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    acceleration = params[0] + params[1] * v - params[2] * \
+        x + params[3] * x * v - params[4] * x**2 * np.sin(x)
+    return acceleration
+
+
 def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
     inputs = arg.inputs
     outputs = arg.outputs
@@ -80,7 +86,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = lbfgs_evaluator(equation, input)
+        loss = lbfgs_evaluator(found_equation, input)
         losses.append(loss)
     print(f"losses: {losses}")
 

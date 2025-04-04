@@ -17,6 +17,34 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
+def found_equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
+    mu_max = params[0]
+    Ks = params[1]
+    b_sat = params[2]
+    Q10 = params[3]
+    T_ref = params[4]
+    mu_ref = params[5]
+    pH_effect = params[6]
+    sigma_pH_base = params[7]
+    alpha = params[8]
+    beta = params[9]
+    # Enhanced Monod model for substrate inhibition, including cooperative interactions and substrate saturation effects
+    mu_substrate = (mu_max * s) / ((Ks + beta * np.power(s, 2))
+                                   * (1 + alpha * b / b_sat))
+    # Improved Hill function with logistic transformation for population density effect to better model competition dynamics at high densities
+    mu_population = (np.log(1 + alpha * (b / b_sat))) / np.log(1 + alpha)
+    # Temperature adaptation enhanced with Q10 factor and Gaussian term, more accurately accounting for thermal stress effects
+    T_effect = Q10 ** ((temp - T_ref) / 10.0) * \
+        np.exp(-0.05 * (np.power((temp - 37.0), 2)))
+    mu_temp = mu_ref * T_effect
+    # pH effect modeled as a Gaussian function with adaptive sigma_pH, including higher-order polynomial terms for precise non-linear effects at extreme pH values
+    sigma_adaptive = sigma_pH_base + 0.04 * np.abs(pH - 7.0) + 0.025 * np.power(
+        (pH - 7.0), 2) + 0.0017 * np.power((pH - 7.0), 3) + 0.0005 * np.power((pH - 7.0), 4)
+    mu_pH = mu_temp * np.exp(-pH_effect * ((pH - 7.0) / sigma_adaptive) ** 2)
+    # Combined growth rate factors with advanced stability mechanisms, ensuring substrate influence and effective clipping
+    return np.clip(mu_substrate * mu_population * mu_pH, 1e-10, mu_max)
+
+
 def equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ Mathematical function for bacterial growth rate
 
@@ -69,7 +97,7 @@ def load_inputs():
     # 必要なデータのロード
     evaluation_inputs = []
     # 論文の方では探索では train.csv しか使ってなかった。スコアパターンとかかいとるからてっきり全部計算するのかおもた
-    data_files = ['train.csv']
+    data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
     for data_file in data_files:
         df = pd.read_csv(
             f'/workspaces/mictlan/research/funsearch/data/bactgrow/{data_file}')
@@ -83,7 +111,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = lbfgs_evaluator(equation, input)
+        loss = lbfgs_evaluator(found_equation, input)
         losses.append(loss)
     print(f"losses: {losses}")
 
