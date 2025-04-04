@@ -72,9 +72,9 @@ Score: {str(event.payload.score())}
         elif event.type == "on_fn_added":
             message = f"New function added. Score: {event.payload.score()}"
         elif event.type == "on_fn_selected":  # これは cluster のイベント
-            code_length = ", ".join(
+            code_lengths_str = ", ".join(
                 map(str, [len(str(fn.skeleton())) for fn in event.payload[0]]))
-            message = f"Selected function from cluster. Code lengths: [{code_length}]. Score: {event.payload[1].score()}"
+            message = f"Selected function from cluster. Code lengths: [{code_lengths_str}]. Score: {event.payload[1].score()}"
         elif event.type == "on_mutate":
             scores_str = ", ".join(
                 map(str, [fn.score() for fn in event.payload]))
