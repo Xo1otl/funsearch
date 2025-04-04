@@ -150,7 +150,6 @@ class MockIsland(Island):
         self._profilers: List[Callable[[IslandEvent], None]] = []
 
     def request_mutation(self):
-        print("  -> mutation requested")
         time.sleep(3)
         # evaluate するには skeleton を置き換えて score をリセットする必要がある
         new_fn = self._best_fn.clone(self._best_fn.skeleton())
@@ -164,7 +163,6 @@ class MockIsland(Island):
                     type="on_best_fn_improved",
                     payload=new_fn
                 ))
-        print(f"  -> mutation done with score {new_score}")
         return new_fn
 
     def use_profiler(self, profiler_fn):

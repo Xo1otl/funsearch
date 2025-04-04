@@ -258,8 +258,6 @@ class Island(archipelago.Island):
         self._num_fns += 1
 
     def request_mutation(self):
-        print("  -> mutation requested")
-        time.sleep(3)
         sample_clusters = self._select_clusters()
         sample_fns = [cluster.select_fn() for cluster in sample_clusters]
         # まずここに時間がかかる
@@ -274,7 +272,6 @@ class Island(archipelago.Island):
                     type="on_best_fn_improved",
                     payload=new_fn
                 ))
-        print(f"  -> mutation done with score {new_score}")
         return new_fn
 
     def use_profiler(self, profiler_fn):
