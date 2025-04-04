@@ -30,7 +30,8 @@ def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> n
     Return:
         A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.
     """
-    return params[0] * width + params[1] * wavelength + params[2]
+    num_domains = params[0]
+    return num_domains * width + params[1] * wavelength + params[2]
 
 
 # Callable と同じ型の指定方法で skeleton の型を指定する
