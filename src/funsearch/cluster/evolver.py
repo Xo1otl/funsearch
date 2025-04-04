@@ -209,19 +209,16 @@ class Island(archipelago.Island):
         """
         available_clusters = list(self.clusters.values())
         num_clusters = len(available_clusters)
-        num_to_select = min(self._num_selected_clusters, num_clusters)
-
-        if num_to_select <= 0:
-            raise ValueError("No clusters available for selection.")
-
         scores = onp.array([cluster.best_fn().score()
                            for cluster in available_clusters], dtype=float)
         if not onp.all(onp.isfinite(scores)):
-            problematic_indice = onp.where(~onp.isfinite(scores))[0]
-            problematic_code = str(
-                available_clusters[problematic_indice].best_fn().skeleton())
+            problematic_indices = onp.where(~onp.isfinite(scores))[0]
+            problematic_skeletons = [str(available_clusters[idx].best_fn().skeleton())
+                                     for idx in problematic_indices]
+            problematic_info = ", ".join(f"index {idx}: '{skel}'"
+                                         for idx, skel in zip(problematic_indices, problematic_skeletons))
             raise ValueError(
-                f"Non-finite scores detected at indice {problematic_indice}: {problematic_code}")
+                f"Non-finite scores detected. Problematic clusters -> [{problematic_info}]")
 
         period = self._cluster_sampling_temperature_period
         temperature = self._cluster_sampling_temperature_init * \
@@ -231,6 +228,13 @@ class Island(archipelago.Island):
 
         logits = scores / safe_temperature
         probabilities = scipy.special.softmax(logits, axis=-1)
+
+        num_available_clusters = len(onp.where(probabilities > 0)[0])
+        num_to_select = min(self._num_selected_clusters,
+                            num_available_clusters)
+
+        if num_to_select <= 0:
+            raise ValueError("No clusters available for selection.")
 
         try:
             selected_indices = onp.random.choice(
