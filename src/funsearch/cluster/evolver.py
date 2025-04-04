@@ -133,7 +133,6 @@ class Evolver(archipelago.Evolver):
         last_reset_time = time.time()
         while self.running:
             # TODO: 並列で処理するけど、全部一斉に終わらないと次に行かない設計になってる、ちょっと効率悪いから、時間があれば直そう
-            # Go の context みたいなのがあれば安全に実装できそうだが、完璧な実装はかなり大変そう
             self._evolve_islands()
             # FIXME: monkey patch なのでもっとましな設定方法や evaluate で完結する対処法ないか考える
             jax.clear_caches()  # これがないとメモリリークする

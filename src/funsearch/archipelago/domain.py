@@ -1,4 +1,4 @@
-from typing import Protocol, Callable, List, NamedTuple, Literal
+from typing import Protocol, List, NamedTuple, Literal
 from funsearch import function
 from funsearch import profiler
 

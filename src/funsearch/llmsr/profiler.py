@@ -22,6 +22,7 @@ class Profiler:
         message = ""
         body = ""
         current_time = time.perf_counter()
+        # TODO: thread_id 使うの無理やりすぎるから時間があればイベントの型考え直した方がいいのかもしれん
         thread_id = threading.get_ident()
 
         if event.type == "on_evaluate":
