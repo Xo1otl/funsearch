@@ -59,10 +59,10 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * イベントの型に島のidとか含めるようにしたら、更に詳細な profiler が作れるようになると思ったけど、普通にid()関数でアドレスとればそれでおk
 
 # Idea
-* 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう
+* 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう (やってみたら意外と被るの多いらしくてちゃんとクラスタリングされてた)
 * 各テストに対する合否分布や、プログラムの構造でクラスタリングしてみてもいい気がする
 * 分極反転幅構造だけでなく、材料の屈折率の波長依存性もコントロールが可能であり、それの探索でLLM-SRできるかもしれない。どんな波長依存性を持つ材料を使えばいいのかについて探索できそう。
-* ??? 「材料の波長依存性については量子井戸とかを工夫してバンドギャップ内にピークが来るように...」
+* ??? 「材料の波長依存性は量子井戸とかを工夫してバンドギャップ内にピークが来るように...」
 
 # Memo
 * 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる
@@ -70,6 +70,7 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * 大した計算量じゃないらしく jax より numpy のほうが普通に evaluate が速い
 * 強制はしてないけど profiler と mutation engine はシングルトンを想定
 * 関数の generics は paramspec でできる、型の渡し方などは Callable と同じ
+* bfgs は jaxopts にあるけどこれはメンテされてないから使いたく無かった、しかし発見した npda の式が bfgs でしか収束しなくてびっくり
 
 inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
 
@@ -157,52 +158,7 @@ def equation_v2(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
 Implement `equation_v2` by **modifying its calculation logic** for improvement, and store the function in the json field.
 ```
 
-# 発見した公式
+# 原文のメモ (細かいところ聞かれても答えられるようにしたい)
 
-## oscillator1
-
-
-## bactgrow
-```
-2025-04-04 08:42:32,545 ThreadPoolExecutor-116_1 | on_evaluated         | Evaluation finished in 1.7998s. Score: -0.0022549720015376806
-2025-04-04 08:42:32,545 ThreadPoolExecutor-116_1 | on_best_fn_improved  | Best function improved (within island)!
-
-==================== Evaluated Function ====================
-def equation_v2(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
-    mu_max = params[0]  # Maximum specific growth rate
-    Ks = params[1]     # Half-saturation constant for substrate
-    Q10_temp = params[2]  # Temperature sensitivity coefficient
-    optimal_temp = params[3]  # Optimal temperature for growth
-    pH_effect_slope = params[4]  # Slope of the effect of pH on growth rate
-    KpH = params[5]     # pH effect constant
-    carrying_capacity = params[6]  # Carrying capacity of environment
-    inhibition_strength = params[7]  # Strength of density-dependent inhibition
-    high_substrate_limit = params[8]  # Maximum substrate concentration that can support full growth rate
-    low_substrate_effectiveness = params[9]
-    
-    # Temperature factor with a sigmoid function for smooth transition around optimal temp, considering Q10 effects
-    temp_factor = 1 / (1 + np.exp(-Q10_temp * ((temp - optimal_temp) / 10)))
-    
-    # pH factor using a Gaussian distribution to better capture the bell-shaped sensitivity around neutral pH, with an offset for lower pH tolerance
-    pH_diff = pH - 7.0
-    pH_factor = np.exp(-((pH_diff / KpH)**2) * (pH_effect_slope + pH_diff**2))
-    
-    # Growth rate calculation incorporating substrate limitations more effectively, with a quadratic term to reflect diminishing returns at high concentrations
-    growth_rate = mu_max * s / (Ks + s + s**2) * temp_factor * pH_factor
-    
-    # Inhibition term considering the density of bacteria and carrying capacity with a sigmoid function for non-linearity, adjusted for steeper inhibition at higher densities
-    inhibition_term = 1 / (1 + np.exp(-inhibition_strength * ((b - carrying_capacity) / carrying_capacity)**2))
-    
-    # Substrate adjustment factor to account for substrate concentration effects on growth, incorporating a Gaussian decay beyond the high_substrate_limit, with an additional exponential term to reflect rapid decline at very low concentrations
-    substrate_adjustment = np.where(s > high_substrate_limit, np.exp(-((s - high_substrate_limit) / (2 * high_substrate_limit))**2), low_substrate_effectiveness + s * (1 - low_substrate_effectiveness) / Ks) * np.exp(-s / (Ks * 50))
-    
-    # Final adjusted growth rate considering all factors
-    final_growth_rate = growth_rate * inhibition_term * substrate_adjustment
-    return final_growth_rate
-------------------------------------------------------------
-Score: -0.0022549720015376806
-============================================================
-```
-
-LLM-SR (Mixtral) は0.0026
-LLM-SR (GPT-3.5) は0.00214
+* PPLの評価してる
+* ガウシアンノイズ追加したデータで評価してる
