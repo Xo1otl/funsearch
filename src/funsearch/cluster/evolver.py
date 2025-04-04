@@ -112,17 +112,14 @@ class Evolver(archipelago.Evolver):
             for future in concurrent.futures.as_completed(future_to_island):
                 island = future_to_island[future]
                 try:
-                    # 1分以上かかる場合は強制終了 (ollama が最大でも20秒 evaluate も40秒もかかったらおかしい)
+                    # 1分以上かかる場合は強制終了 (ollama が最大でも30秒 evaluate も30秒もかかったらおかしい)
                     _ = future.result(timeout=60)
                 except Exception as e:
-                    # In a mock, simply ignore mutation errors.
-                    print(f"Error during mutation: {e}", file=sys.stderr)
+                    # 処理は止めない (成功した島で best_fn 更新してるかもやから continue もしたらあかん)
+                    print(
+                        f"Error during mutation/evaluation for island {hex(id(island))}: {e}", file=sys.stderr)
                     traceback.print_exc()
-                    # エラーを見たいので止めるようにする
-                    # self.stop()
-                    continue
-                # If this island now has a higher score than any previous best,
-                # update best_island and trigger the on_best_island_improved event.
+
                 if self.best_island is None or island.best_fn().score() > self.best_island.best_fn().score():
                     self.best_island = island
                     for profiler_fn in self._profilers:
