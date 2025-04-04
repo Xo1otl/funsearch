@@ -2,7 +2,6 @@ from funsearch import archipelago
 from funsearch import function
 from funsearch import cluster
 from funsearch import profiler
-import time
 
 
 def test_evolver():

@@ -55,8 +55,9 @@ class Evolver(archipelago.Evolver):
         self._profilers: List[Callable[[archipelago.EvolverEvent], None]] = []
         self.running: bool = False
         self._thread: threading.Thread | None = None
-        self.best_island: archipelago.Island = max(
-            self.islands, key=lambda island: island.best_fn().score())
+        self.best_island: None = None
+        self.best_score: function.FunctionScore = max(
+            [island.best_fn().score() for island in self.islands])
 
     def _reset_islands(self):
         # 一番良い島を取得
@@ -103,8 +104,6 @@ class Evolver(archipelago.Evolver):
 
     def _evolve_islands(self):
         print(">>> evolving islands...")
-        # Evolve islands by calling request_mutation concurrently,
-        # but do not exceed the allowed parallelism.
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
             future_to_island = {
                 executor.submit(island.request_mutation): island for island in self.islands
@@ -112,19 +111,19 @@ class Evolver(archipelago.Evolver):
             for future in concurrent.futures.as_completed(future_to_island):
                 island = future_to_island[future]
                 try:
-                    # 1分以上かかる場合は強制終了 (ollama が最大でも30秒 evaluate も30秒もかかったらおかしい)
                     _ = future.result(timeout=60)
                 except Exception as e:
-                    # 処理は止めない (成功した島で best_fn 更新してるかもやから continue もしたらあかん)
                     print(
                         f"Error during mutation/evaluation for island {hex(id(island))}: {e}", file=sys.stderr)
                     traceback.print_exc()
+                # この中で best_fn を更新してたら、数時間回してると全くイベントが呼ばれなくなる謎現象が発生した
 
-                if self.best_island is None or island.best_fn().score() > self.best_island.best_fn().score():
-                    self.best_island = island
-                    for profiler_fn in self._profilers:
-                        profiler_fn(archipelago.OnBestIslandImproved(
-                            type="on_best_island_improved", payload=island))
+        # 仕方がないのでメインスレッドで best_fn 更新これは呼ばれるやろさすがに
+        best_island = max(self.islands, key=lambda i: i.best_fn().score())
+        if best_island.best_fn().score() > self.best_score:
+            for profiler_fn in self._profilers:
+                profiler_fn(archipelago.OnBestIslandImproved(
+                    type="on_best_island_improved", payload=best_island))
 
     def _run(self):
         last_reset_time = time.time()
@@ -219,8 +218,7 @@ class Island(archipelago.Island):
         period = self._cluster_sampling_temperature_period
         temperature = self._cluster_sampling_temperature_init * \
             (1 - (self._num_fns % period) / period)
-        safe_temperature = max(temperature, onp.finfo(
-            float).tiny)
+        safe_temperature = max(temperature, float(onp.finfo(float).tiny))
 
         logits = scores / safe_temperature
         probabilities = scipy.special.softmax(logits, axis=-1)
@@ -317,5 +315,5 @@ class DefaultCluster(Cluster):
         self._profilers.append(profiler_fn)
         return lambda: self._profilers.remove(profiler_fn)
 
-    def best_fn(self) -> function.Function:
+    def best_fn(self):
         return max(self._functions, key=lambda fn: fn.score())
