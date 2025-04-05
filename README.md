@@ -76,6 +76,9 @@ inspect.getsource() 使えばコメントを含む関数のソースコードを
 
 ## もとの prompt 例
 ```
+You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below, considering the physical meaning and relationships of inputs.
+
+
 """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
 """
