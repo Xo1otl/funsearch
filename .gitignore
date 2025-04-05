@@ -1,4 +1,4 @@
 __pycache__/
 *.log
 out/
-!npda_numpy_20250405_082119/
+!npda_numpy_20250405_082119/*
