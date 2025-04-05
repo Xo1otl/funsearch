@@ -1,3 +1,7 @@
+"""
+jax では係数同定ができないけど、いろいろ試した結果をのこす
+"""
+
 from funsearch import function
 from funsearch import llmsr
 from dataclasses import dataclass
@@ -132,7 +136,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
 
     solver = optax.lbfgs()
     init_params = np.ones(MAX_NPARAMS) * 0.1
-    # spicy が見つけた初期値を使うとより小さい誤差に収束できてることがわかる
+    # spicy が見つけた初期値を使うとより小さい誤差に収束できることがわかる
     # init_params = np.array([-2.81395596e+00,  4.27215799e+00, 1.85079628e+01,  3.29352756e-01,
     #                         3.29352697e-01,  3.66807525e-04,  2.72828390e-02, - 3.05278855e+01,
     #                         1.34336994e+02,  1.00000000e+00])
