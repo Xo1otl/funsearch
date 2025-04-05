@@ -55,3 +55,5 @@ def found_equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarra
 論文で発見されている関数より精度がたかい
 
 発見した式が長すぎるとパラメータの振り方によって無理やり結果が合う可能性が高まるから過学習しがちだと思った
+
+qwen2.5-coder は MAXNPARAMS を無視してくる場合があることがわかった、モデルの知識は関係ないのかもしれんけどせめて指示守れるモデルが使いたい

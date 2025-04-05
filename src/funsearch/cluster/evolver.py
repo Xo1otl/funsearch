@@ -117,9 +117,10 @@ class Evolver(archipelago.Evolver):
                     traceback.print_exc()
                 # この中で best_fn を更新してたら、数時間回してると全くイベントが呼ばれなくなる謎現象が発生した
 
-        # 仕方がないのでメインスレッドで best_fn 更新、一周するまで最良の島の更新ができないけど、これはさすがに呼ばれるやろ
+        # 仕方がないのでメインスレッドで best_fn 更新、通知の粒度は犠牲になるけど、これはさすがに呼ばれるやろ
         best_island = max(self.islands, key=lambda i: i.best_fn().score())
         if best_island.best_fn().score() > self._best_score:
+            self._best_score = best_island.best_fn().score()
             for profiler_fn in self._profilers:
                 profiler_fn(archipelago.OnBestIslandImproved(
                     type="on_best_island_improved", payload=best_island))
