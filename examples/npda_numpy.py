@@ -117,6 +117,7 @@ def test_evaluate(inputs):
 def main():
     inputs = load_inputs()
 
+    # FIXME: qwen2.5-coder は SHG というワードを知らないので Second Harmonic Generation という正式名称を伝えるべきだった、なくても発見できたのはラッキーだけど今後気をつける
     prompt_comment = """
 Find the mathematical function skeleton that represents SHG efficiency in vertical Quasi-Phase Matching devices, given domain width and wavelength.
 The final efficiency expression is expected to be proportional to the square of a sinc-like function involving terms derived from width and wavelength.
