@@ -118,6 +118,7 @@ class Evolver(archipelago.Evolver):
                 # この中で best_fn を更新してたら、数時間回してると全くイベントが呼ばれなくなる謎現象が発生した
 
         # 仕方がないのでメインスレッドで best_fn 更新、通知の粒度は犠牲になるけど、これはさすがに呼ばれるやろ
+        # FIXME: 同期型島モデルの各サイクルごとの発火だからイベントが呼ばれたタイミングが正確に何回目なのか知る方法がない
         best_island = max(self.islands, key=lambda i: i.best_fn().score())
         if best_island.best_fn().score() > self._best_score:
             self._best_score = best_island.best_fn().score()

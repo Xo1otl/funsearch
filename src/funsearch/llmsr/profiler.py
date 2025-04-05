@@ -36,6 +36,7 @@ class Profiler:
                     elapsed_time = current_time - start_time
                 self._evaluation_count += 1
             message = f"Evaluation finished in {elapsed_time:.4f}s. Score: {event.payload[1]}"
+        # FIXME: 同期型島モデルの各サイクルごとの発火だからイベントが呼ばれたタイミングが正確に何回目なのか知る方法がない
         elif event.type == "on_best_island_improved":
             with self._lock:
                 current_eval_count = self._evaluation_count
