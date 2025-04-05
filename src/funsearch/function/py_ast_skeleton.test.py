@@ -93,7 +93,6 @@ def test_py_ast_skeleton():
     arg = EvaluatorArg(inputs, outputs)
     props = function.DefaultFunctionProps(
         py_ast_skeleton, [arg], lbfgs_evaluator)
-    # props = function.FunctionProps(py_ast_skeleton, [arg], adam_evaluator)
     fn = function.DefaultFunction(props)
     fn.use_profiler(profiler.default_fn)
     print(fn.evaluate())

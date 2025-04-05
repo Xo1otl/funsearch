@@ -1,6 +1,7 @@
 from .domain import *
 import ast
 import jax.numpy as jnp
+import numpy as np
 import scipy
 
 
@@ -20,7 +21,7 @@ class PyAstSkeleton(Skeleton):
 
         # TODO: scipy の細かい関数なども名前空間に追加しといたほうがいいかも
         local_ns = {}
-        local_ns['np'] = jnp
+        local_ns['np'] = np # FIXME: 一時的に numpy に戻している
         local_ns['scipy'] = scipy  # scipy を追加
         exec(code_obj, local_ns)
 

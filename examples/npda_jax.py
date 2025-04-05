@@ -1,13 +1,15 @@
 from funsearch import function
 from funsearch import llmsr
 from dataclasses import dataclass
+import jaxopt
 import jax
 import jax.numpy as np
 import optax
 import pandas as pd
 
 # evaluate で gpu 使ってみたら時々バグって ollama が止まるし、計算量的に普通に cpu のほうが速い
-jax.config.update('jax_platform_name', 'cpu')
+# jax.config.update('jax_platform_name', 'cpu') # adam の場合は gpu のほうが速い
+jax.config.update('jax_enable_x64', True)  # 精度あげても found_equation が収束できない
 
 MAX_NPARAMS = 10
 
@@ -77,6 +79,48 @@ def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> n
     return num_domains * width + params[1] * wavelength + params[2]
 
 
+# FIXME: なぜか jax の bfgs だと収束しないし時間もめっちゃかかる
+def bfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
+    inputs = arg.inputs
+    outputs = arg.outputs
+    width, wavelength = inputs[:, 0], inputs[:, 1]
+
+    def loss_fn(params: np.ndarray):
+        return np.mean((skeleton(width, wavelength, params) - outputs) ** 2)
+
+    # FIXME: なんか大量のINFOとWARNINGが出る
+    solver = jaxopt.BFGS(fun=loss_fn, verbose=False)
+    init_params = np.ones(MAX_NPARAMS) * 0.1
+    results = solver.run(init_params=init_params)
+    final_params = results.params
+    final_loss = loss_fn(final_params)
+    return float(-final_loss)
+
+
+# adam やってみたけど found_equation は収束しない
+def adam_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
+    x1, x2 = arg.inputs[:, 0], arg.inputs[:, 1]
+    targets = arg.outputs
+
+    def loss_fn(params):
+        return np.mean((skeleton(x1, x2, params) - targets)**2)
+    grad_fn = jax.grad(loss_fn)
+    optimizer = optax.adam(3e-4)
+    init_params = np.ones(MAX_NPARAMS)
+    init_opt_state = optimizer.init(init_params)
+
+    def body_fn(carry, _):
+        params, opt_state = carry
+        grads = grad_fn(params)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+        return (params, opt_state), None
+    (final_params, _), _ = jax.lax.scan(
+        body_fn, (init_params, init_opt_state), None, length=10000)
+
+    return float(-loss_fn(final_params))
+
+
 # Callable と同じ型の指定方法で skeleton の型を指定する
 def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
     inputs = arg.inputs
@@ -87,9 +131,8 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
         return np.mean((skeleton(width, wavelength, params) - outputs) ** 2)
 
     solver = optax.lbfgs()
-    # FIXME: なんと発見された npda の近似解は bfgs でしか収束せず lbfgs では収束しなかった
-    init_params = np.ones(MAX_NPARAMS)
-    # bfgs で収束した時の params をあらかじめ指定すると収束する
+    init_params = np.ones(MAX_NPARAMS) * 0.1
+    # spicy が見つけた初期値を使うとより小さい誤差に収束できてることがわかる
     # init_params = np.array([-2.81395596e+00,  4.27215799e+00, 1.85079628e+01,  3.29352756e-01,
     #                         3.29352697e-01,  3.66807525e-04,  2.72828390e-02, - 3.05278855e+01,
     #                         1.34336994e+02,  1.00000000e+00])
@@ -106,7 +149,7 @@ def lbfgs_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
         return (params, opt_state), None
 
     (final_params, _), _ = jax.lax.scan(
-        body_fn, (init_params, opt_state), None, length=30)
+        body_fn, (init_params, opt_state), None, length=100)
 
     loss = float(-loss_fn(final_params))
     if np.isnan(loss) or np.isinf(loss):
@@ -133,28 +176,29 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = lbfgs_evaluator(found_equation, input)
+        loss = adam_evaluator(found_equation, input)
         losses.append(loss)
     print(f"losses: {losses}")
 
 
 def main():
     inputs = load_inputs()
+    test_evaluate(inputs)
 
-    prompt_comment = """
-Find the mathematical function skeleton that represents SHG efficiency in vertical Quasi-Phase Matching devices, given domain width and wavelength.
-The final efficiency expression is expected to be proportional to the square of a sinc-like function involving terms derived from width and wavelength.
-"""  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
+#     prompt_comment = """
+# Find the mathematical function skeleton that represents SHG efficiency in vertical Quasi-Phase Matching devices, given domain width and wavelength.
+# The final efficiency expression is expected to be proportional to the square of a sinc-like function involving terms derived from width and wavelength.
+# """  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
 
-    evolver = llmsr.spawn_evolver(llmsr.EvolverConfig(
-        equation=equation,
-        evaluation_inputs=inputs,
-        evaluator=lbfgs_evaluator,
-        prompt_comment=prompt_comment,
-        profiler_fn=llmsr.Profiler().profile,
-    ))
+#     evolver = llmsr.spawn_evolver(llmsr.EvolverConfig(
+#         equation=equation,
+#         evaluation_inputs=inputs,
+#         evaluator=lbfgs_evaluator,
+#         prompt_comment=prompt_comment,
+#         profiler_fn=llmsr.Profiler().profile,
+#     ))
 
-    evolver.start()
+#     evolver.start()
 
 
 if __name__ == "__main__":
