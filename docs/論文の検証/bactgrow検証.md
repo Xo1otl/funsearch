@@ -52,7 +52,7 @@ def found_equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarra
 ![alt text](探索中の誤差の遷移.png)
 
 ## 考察
-論文で発見されている関数より精度がたかい
+trainとidに対して論文で発見されている関数より精度がたかい
 
 発見した式が長すぎるとパラメータの振り方によって無理やり結果が合う可能性が高まるから過学習しがちだと思った
 

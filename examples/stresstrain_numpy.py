@@ -19,47 +19,36 @@ def scipy_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
 
     # Load data observations
     inputs, outputs = arg.inputs, arg.outputs
-    width, wavelength = inputs[:, 0], inputs[:, 1]
+    strain, temp = inputs[:, 0], inputs[:, 1]
 
     def loss(params):
-        y_pred = skeleton(width, wavelength, params)
+        y_pred = skeleton(strain, temp, params)
         return np.mean((y_pred - outputs) ** 2)
 
-    # result = minimize(loss, [1.0]*MAX_NPARAMS, method='L-BFGS-B') # L-BFGS-B だと係数が見つからない
     result = minimize(loss, [1.0]*MAX_NPARAMS, method='BFGS')
     loss = result.fun
 
     return float(-loss)  # type: ignore
 
 
-def found_equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
-    k_mismatch = 2 * np.pi / wavelength - 2 * np.pi / (params[0] * width)
-    phase_shift = params[1]
-    broadening_factor = params[2]
-    sinc_component = np.sinc(
-        (k_mismatch + phase_shift) / (2 * broadening_factor))
-    non_linear_effect = params[3] * sinc_component**2
-    higher_order_interactions = params[4] * \
-        wavelength**(-params[5]) + params[6] * width**(-params[7])
-    phase_matching_effect = params[8] * k_mismatch**2
-    shg_efficiency = non_linear_effect + \
-        higher_order_interactions + phase_matching_effect
-    return shg_efficiency
+def equation_v2(strain: np.ndarray, temp: np.ndarray, params: np.ndarray) -> np.ndarray:
+    stress = (params[0] * strain + params[1] * temp + params[2] * strain**2 + params[3] * temp**2 + params[4] * strain * temp + params[5] * strain**3
+              + params[6] * temp**3 + params[7] * strain**2 * temp + params[8] * strain * temp**2) / (1 + params[9] * strain)
+    return stress
 
 
-def equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """ Mathematical function for shg efficiency
+def equation(strain: np.ndarray, temp: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for stress in Aluminium rod
 
     Args:
-        width: A numpy array representing periodic domain width
-        wavelength: A numpy array representing wavelength.
+        strain: A numpy array representing observations of strain.
+        temp: A numpy array representing observations of temperature.
         params: Array of numeric constants or parameters to be optimized
 
     Return:
-        A numpy array representing shg efficiency as the result of applying the mathematical function to the inputs.
+        A numpy array representing stress as the result of applying the mathematical function to the inputs.
     """
-    num_domains = params[0]
-    return num_domains * width + params[1] * wavelength + params[2]
+    return params[0] * strain + params[1] * temp
 
 
 def load_inputs():
@@ -69,7 +58,7 @@ def load_inputs():
     data_files = ['train.csv', 'test_id.csv', 'test_ood.csv']
     for data_file in data_files:
         df = pd.read_csv(
-            f'/workspaces/mictlan/research/funsearch/data/npda/{data_file}')
+            f'/workspaces/mictlan/research/funsearch/data/stressstrain/{data_file}')
         data = np.array(df)
         inputs = data[:, :-1]
         outputs = data[:, -1].reshape(-1)
@@ -80,7 +69,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = scipy_evaluator(found_equation, input)
+        loss = scipy_evaluator(equation_v2, input)
         losses.append(loss)
     print(f"losses: {losses}")
 
@@ -90,10 +79,8 @@ def main():
     test_evaluate(inputs)
     return
 
-    # FIXME: qwen2.5-coder は SHG というワードを知らないので Second Harmonic Generation という正式名称を伝えるべきだった、なくても発見できたのはラッキーだけど今後気をつける
     prompt_comment = """
-Find the mathematical function skeleton that represents SHG efficiency in vertical Quasi-Phase Matching devices, given domain width and wavelength.
-The final efficiency expression is expected to be proportional to the square of a sinc-like function involving terms derived from width and wavelength.
+Find the mathematical function skeleton that represents stress, given data on strain and temperature in an Aluminium rod for both elastic and plastic regions.
 """  # prompt_comment の mathmatical function skeleton という用語とても大切、これがないと llm が params の存在を忘れて細かい値を設定し始める
 
     evolver = llmsr.spawn_evolver(llmsr.EvolverConfig(

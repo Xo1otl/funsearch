@@ -93,6 +93,8 @@ def test_evaluate(inputs):
 
 def main():
     inputs = load_inputs()
+    test_evaluate(inputs)
+    return
 
     prompt_comment = """
 Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity.
