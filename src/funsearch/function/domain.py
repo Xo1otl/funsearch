@@ -36,8 +36,6 @@ class OnEvaluated(NamedTuple):
 type FunctionEvent = OnEvaluate | OnEvaluated
 
 
-# Skeleton は Evaluator のコードの中でグローバルに直接呼び出されるため、型情報が不要
-# それ以外の呼び出しでも、動的にコンパイルされるため型情報が不要
 class Skeleton[**P, R](Protocol):
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         ...
