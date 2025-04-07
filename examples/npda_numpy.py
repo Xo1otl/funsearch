@@ -1,7 +1,7 @@
 from funsearch import function
 from funsearch import llmsr
 from dataclasses import dataclass
-from scipy.optimize import minimize
+from scipy.optimize import minimize, basinhopping
 import numpy as np
 # import jax.numpy as np # scipy.optimize.minimize は jax.numpy だと動かないことを試してみた
 import pandas as pd
@@ -27,6 +27,7 @@ def scipy_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
         return np.mean((y_pred - outputs) ** 2)
 
     # result = minimize(loss, [1.0]*MAX_NPARAMS, method='L-BFGS-B') # L-BFGS-B だと係数が見つからない
+    # result = basinhopping(loss, [1.0] * MAX_NPARAMS, disp=True)  # これでも係数が見つからない
     result = minimize(loss, [1.0]*MAX_NPARAMS, method='BFGS')
     loss = result.fun
 
