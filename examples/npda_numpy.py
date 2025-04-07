@@ -3,6 +3,7 @@ from funsearch import llmsr
 from dataclasses import dataclass
 from scipy.optimize import minimize
 import numpy as np
+# import jax.numpy as np # scipy.optimize.minimize は jax.numpy だと動かないことを試してみた
 import pandas as pd
 
 MAX_NPARAMS = 10
