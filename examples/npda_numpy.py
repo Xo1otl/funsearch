@@ -26,12 +26,25 @@ def scipy_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
         y_pred = skeleton(width, wavelength, params)
         return np.mean((y_pred - outputs) ** 2)
 
-    # result = minimize(loss, [1.0]*MAX_NPARAMS, method='L-BFGS-B') # L-BFGS-B だと係数が見つからない
-    # result = basinhopping(loss, [1.0] * MAX_NPARAMS, disp=True)  # これでも係数が見つからない
-    result = minimize(loss, [1.0]*MAX_NPARAMS, method='BFGS')
+    result = basinhopping(loss, [1.0] * MAX_NPARAMS, disp=True, minimizer_kwargs={"method": "BFGS"})  # これでも係数が見つからない
+    # result = minimize(loss, [1.0]*MAX_NPARAMS, method='BFGS')
     loss = result.fun
 
     return float(-loss)  # type: ignore
+
+
+def unoptimizable_equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
+    # ここをコメントアウトしてevaluateすれば、摂動項を追加することで同定できた係数で目的関数がちゃんと最適化されていることがわかる
+    # params = np.array([8.95695069e-01, -4.14636143e+00, -3.95280532e-03,  9.50745281e+00,
+    #                    4.74926578e-01,  3.06783245e+01, -2.70970610e+00,  3.61013288e+00,
+    #                    -9.52100818e-03,  1.00000000e+00])
+    k_mismatch = 2 * np.pi / wavelength - 2 * np.pi / (params[0] * width)
+    phase_shift = params[1]
+    broadening_factor = params[2]
+    sinc_component = np.sinc(
+        (k_mismatch + phase_shift) / (2 * broadening_factor))
+    shg_efficiency = params[3] * sinc_component**2
+    return shg_efficiency
 
 
 def found_equation(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:
@@ -82,7 +95,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = scipy_evaluator(found_equation, input)
+        loss = scipy_evaluator(unoptimizable_equation, input)
         losses.append(loss)
     print(f"losses: {losses}")
 
