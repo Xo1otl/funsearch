@@ -75,7 +75,7 @@ class PyMutationEngine(function.MutationEngine):
         skeletons = [fn.skeleton() for fn in sorted_fn_list]
         prompt = self._construct_prompt(skeletons)
         # これは時間がかかる処理
-        answer = self._ask_ollama(prompt)
+        answer = self._ask_gemini(prompt)
         fn_code = self._parse_answer(answer, str(skeletons[0]))
         new_skeleton = function.PyAstSkeleton(fn_code)
         new_fn = fn_list[0].clone(new_skeleton)  # どれcloneしても構わん

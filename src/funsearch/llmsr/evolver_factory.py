@@ -5,6 +5,8 @@ from funsearch import function
 from funsearch import cluster
 import inspect
 from .py_mutation_engine import PyMutationEngine
+from infra.ai import llm
+from google import genai
 
 
 class EvolverConfig[**P, R, T](NamedTuple):
@@ -42,11 +44,13 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
 ```
 """)
 
+    gemini_client = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
     # mutation engine の準備
     docstring = inspect.getdoc(config.equation)
     mutation_engine = PyMutationEngine(
         prompt_comment=config.prompt_comment,
         docstring=docstring or "",
+        gemini_client=gemini_client
     )
     mutation_engine.use_profiler(config.profiler_fn)
     print(f'''\

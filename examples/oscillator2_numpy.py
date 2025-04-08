@@ -30,19 +30,28 @@ def scipy_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndar
 
     return float(-loss)  # type: ignore
 
+
 def equation_v2(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-        omega0 = params[0]  # natural frequency
-        gamma = params[1]   # damping ratio
-        F0 = params[2]     # amplitude of driving force
-        omega_d = params[3] # angular frequency of driving force
-        alpha = params[4]   # nonlinear term coefficient for position
-        beta = params[5]    # nonlinear term coefficient for velocity
-        delta = params[6]   # additional damping term coefficient
-        eta = params[7]     # coupling parameter between position and velocity
-        phi = params[8]     # phase shift in driving force
-        chi = params[9]     # additional nonlinear term coefficient
-        dvdt = -omega0**2 * x - 2 * gamma * omega0 * v - delta * v + F0 * np.cos(omega_d * t + phi) + alpha * (x**2) + beta * (v**2) + eta * x * v + chi * (x**3)
-        return dvdt
+    omega0 = params[0]  # natural frequency
+    gamma = params[1]   # damping ratio
+    F0 = params[2]     # amplitude of driving force
+    omega_d = params[3]  # angular frequency of driving force
+    alpha = params[4]   # nonlinear term coefficient for position
+    beta = params[5]    # nonlinear term coefficient for velocity
+    delta = params[6]   # additional damping term coefficient
+    eta = params[7]     # coupling parameter between position and velocity
+    phi = params[8]     # phase shift in driving force
+    chi = params[9]     # additional nonlinear term coefficient
+    dvdt = -omega0**2 * x - 2 * gamma * omega0 * v - delta * v + F0 * \
+        np.cos(omega_d * t + phi) + alpha * (x**2) + \
+        beta * (v**2) + eta * x * v + chi * (x**3)
+    return dvdt
+
+
+def equation_v3(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    dv = params[0] * np.sin(t) - params[1] * x - params[2] * v + params[3] * x**2 - params[4] * v**3 + params[5] * np.sin(params[6] * t) - params[7] * x * v + params[8] * np.cos(params[9] * t)
+    return dv
+
 
 def equation(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ Mathematical function for acceleration in a damped nonlinear oscillator
@@ -78,7 +87,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = scipy_evaluator(equation_v2, input)
+        loss = scipy_evaluator(equation_v3, input)
         losses.append(loss)
     print(f"losses: {losses}")
 
@@ -98,6 +107,7 @@ Find the mathematical function skeleton that represents acceleration in a damped
         evaluator=scipy_evaluator,
         prompt_comment=prompt_comment,
         profiler_fn=llmsr.Profiler().profile,
+        num_parallel=5
     ))
 
     evolver.start()

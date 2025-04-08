@@ -1,4 +1,4 @@
-# oscillator1
+# oscillator2
 
 ## どの部分に着目してどのような検証を行ったか
 

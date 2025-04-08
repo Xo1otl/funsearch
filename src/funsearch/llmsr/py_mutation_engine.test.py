@@ -10,8 +10,8 @@ def test_py_mutation_engine():
         docstring="",
         gemini_client=gemini_client
     )
-    # response = engine._ask_gemini("1 + 1")
-    response = engine._ask_ollama("1 + 1")
+    response = engine._ask_gemini("1 + 1")
+    # response = engine._ask_ollama("1 + 1")
     print(response)
 
 

@@ -27,6 +27,10 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * `archipelago.Cluster.on_fn_added`
 * `archipelago.Cluster.on_fn_selected`
 
+# FIXME
+
+* 非同期島モデルでevaluateとmutationも別個でやるなら今の設計じゃ対応できない気がしてきた
+
 # TODO
 * イベントを工夫するか、なんとかして島ごとの進化の追跡など出来たらいいなと思う
 * 非同期島モデルできたらもっと効率良くなるけど、ローカルだとそこまでやってもしょうが無い
