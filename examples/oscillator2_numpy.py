@@ -52,6 +52,10 @@ def equation_v3(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray)
     dv = params[0] * np.sin(t) - params[1] * x - params[2] * v + params[3] * x**2 - params[4] * v**3 + params[5] * np.sin(params[6] * t) - params[7] * x * v + params[8] * np.cos(params[9] * t)
     return dv
 
+def equation_v4(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    dv = params[0] * np.sin(params[1] * t) - params[2] * x - params[3] * v + params[4] * x**2 - params[5] * v**3 + params[6] * np.cos(params[7] * t) * v - params[8] * x * v + params[9] * np.exp(-params[3] * (x**2 + v**2)) * np.sin(t) + params[1] * np.tanh(x) # Included tanh(x)
+    return dv
+
 
 def equation(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
     """ Mathematical function for acceleration in a damped nonlinear oscillator
@@ -87,7 +91,7 @@ def load_inputs():
 def test_evaluate(inputs):
     losses = []
     for input in inputs:
-        loss = scipy_evaluator(equation_v3, input)
+        loss = scipy_evaluator(equation_v4, input)
         losses.append(loss)
     print(f"losses: {losses}")
 

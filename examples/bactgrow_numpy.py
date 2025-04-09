@@ -13,7 +13,6 @@ class EvaluatorArg:
     inputs: np.ndarray
     outputs: np.ndarray
 
-
 def equation_v2(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
     # idやoodを使うと係数が発見できない、train.csvで発見した係数を手動で設定すれば他のデータセットでも精度を確認可能
     # params = np.array([4.79695157e+03,  9.97774840e-01,  3.09969435e+01,  7.10961033e+00,
