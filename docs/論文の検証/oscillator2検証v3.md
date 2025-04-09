@@ -37,6 +37,8 @@ def equation_v2(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray)
 ![alt text](探索中の誤差の遷移.png)
 
 ## 考察
+特にバグることなく探索し続けられることがわかった
+
 論文で発見されている関数より精度がたかい
 
 これはちゃんと他のデータセットでも係数が見つかる形をしている
