@@ -57,3 +57,4 @@ def default_fn(event: Event) -> None:
     else:
         complete_message = base_message
     default_logger.info(complete_message)
+    

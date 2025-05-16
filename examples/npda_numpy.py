@@ -102,8 +102,8 @@ def test_evaluate(inputs):
 
 def main():
     inputs = load_inputs()
-    test_evaluate(inputs)
-    return
+    # test_evaluate(inputs)
+    # return
 
     # FIXME: qwen2.5-coder は SHG というワードを知らないので Second Harmonic Generation という正式名称を伝えるべきだった、なくても発見できたのはラッキーだけど今後気をつける
     prompt_comment = """

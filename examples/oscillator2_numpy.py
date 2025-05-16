@@ -14,6 +14,7 @@ class EvaluatorArg:
     outputs: np.ndarray
 
 
+# FIXME: 評価関数の中で使いまわす値をわざわざ引数から渡ってくるようにしているが、インスタンスに紐づける等の工夫でこのような回りくどい設計にする必要がなくなる
 def scipy_evaluator(skeleton: function.Skeleton[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray], arg: EvaluatorArg) -> float:
     """ Evaluate the equation on data observations."""
 
