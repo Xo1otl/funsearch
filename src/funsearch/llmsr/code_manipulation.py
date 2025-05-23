@@ -294,11 +294,12 @@ def force_squash_return_statement(code: str) -> str:
 
             # Combine parts with spaces (remove extra spaces later)
             # Use strip() on each part to avoid joining leading/trailing whitespace
-            combined_statement = " ".join(part.strip() for part in statement_parts)
+            combined_statement = " ".join(part.strip()
+                                          for part in statement_parts)
             # Clean up potential excessive internal spacing
             combined_statement = re.sub(r'\s{2,}', ' ', combined_statement)
             new_code_lines.append(return_line_indent_str + combined_statement)
-            i = last_successful_line_index + 1 # Move index past the merged lines
+            i = last_successful_line_index + 1  # Move index past the merged lines
         else:
             # Not a return statement, add line as is
             new_code_lines.append(line)
@@ -367,10 +368,12 @@ def force_squash_assignment_statement(code: str) -> str:
 
             # Combine only if more than one part was collected (i.e., merging happened)
             if len(statement_parts) > 1:
-                combined_statement = " ".join(part.strip() for part in statement_parts)
+                combined_statement = " ".join(
+                    part.strip() for part in statement_parts)
                 combined_statement = re.sub(r'\s{2,}', ' ', combined_statement)
-                new_code_lines.append(assign_line_indent_str + combined_statement)
-                i = last_successful_line_index + 1 # Move index past the merged lines
+                new_code_lines.append(
+                    assign_line_indent_str + combined_statement)
+                i = last_successful_line_index + 1  # Move index past the merged lines
             else:
                 # No lines were merged, just add the original line
                 new_code_lines.append(line)
@@ -381,3 +384,140 @@ def force_squash_assignment_statement(code: str) -> str:
             i += 1
 
     return "\n".join(new_code_lines)
+
+
+def get_indent_level(line: str) -> int:
+    """
+    行の先頭の空白文字の数を返します（インデントレベルの目安）。
+    """
+    stripped_line = line.lstrip()
+    return len(line) - len(stripped_line)
+
+
+def extract_last_python_block_content(text: str) -> str | None:
+    """
+    テキストから最後の "```python" と "```" で囲まれたコードブロックの内容を抽出します。
+    "```python" マーカーの直後の改行は除去されます。
+    """
+    # 1. テキスト内で "```python" が出現するすべての開始位置を検索
+    block_marker_starts = [match.start()
+                           for match in re.finditer(r"```python", text)]
+
+    if not block_marker_starts:
+        return None  # "```python" が見つからない
+
+    last_block_marker_start_pos = block_marker_starts[-1]
+
+    # "```python" マーカーの直後から検索を開始
+    # len("```python") はマーカー自体の長さ
+    content_start_pos = last_block_marker_start_pos + len("```python")
+
+    # content_start_pos 以降で、最初の "```" (終了マーカー) を見つける
+    # text[content_start_pos:] は、検索対象を限定するスライス
+    end_marker_match = re.search(r"```", text[content_start_pos:])
+
+    if not end_marker_match:
+        return None  # 終了の "```" が見つからない
+
+    # コードブロックの内容を抽出
+    # end_marker_match.start() はスライスされた部分文字列 text[content_start_pos:] 内での位置
+    code_content = text[content_start_pos: content_start_pos +
+                        end_marker_match.start()]
+
+    # 一般的に ```python の直後は改行なので、先頭の改行文字がもしあれば1つ除去する
+    if code_content.startswith('\n'):
+        code_content = code_content[1:]
+
+    return code_content
+
+
+def find_last_function_in_code(code: str) -> str | None:
+    """
+    指定されたPythonコード文字列から、最後に定義された関数全体を抽出します。
+    関数は "def func_name(...):" で始まり、インデントに基づいて本体が認識されます。
+    """
+    if not code.strip():  # コードが空か空白のみ
+        return None
+
+    lines = code.splitlines()
+
+    candidate_defs_info = []  # 検出された関数定義の情報を格納 (行インデックス、行内容)
+
+    # 3. コードブロック内から関数定義 ("def ...:") の最後のものを探す
+    for i, line in enumerate(lines):
+        # 行頭の空白も許容し、"def func_name(...):" のパターンにマッチ
+        # re.match は行頭からのみ検索。複雑な正規表現は不要。
+        if re.match(r"^\s*def.*:$", line):
+            candidate_defs_info.append({'line_idx': i})
+
+    if not candidate_defs_info:
+        return None  # 関数定義 ("def ...:") が見つからない
+
+    last_def_info = candidate_defs_info[-1]
+    last_def_line_idx = last_def_info['line_idx']
+
+    # 4. 最後の関数定義の開始行から、その関数の本体の終わり (return やインデントの終わり) までを見つける
+    function_lines = [lines[last_def_line_idx]]  # まずdef行自体を関数の一部として追加
+    base_indent_level = get_indent_level(lines[last_def_line_idx])
+
+    for i in range(last_def_line_idx + 1, len(lines)):
+        line = lines[i]
+        current_indent_level = get_indent_level(line)
+        is_empty_line = not line.strip()  # 行が空か空白のみか
+
+        if is_empty_line:
+            # 空行の扱い: 基本的には関数に含めるが、インデントが明らかに浅い場合は区切りとみなす。
+            # def行よりもインデントが浅い空行は、関数の外の可能性が高い。
+            if current_indent_level < base_indent_level:
+                # ただし、関数本体が一行も実質的なコードを含んでいない場合（defの直後の浅い空行など）は、
+                # この空行を関数の終わりと判断するのは早計かもしれない。
+                # しかし、ここではシンプルに「浅いインデントの空行は関数の区切り」とする。
+                # 実際には、このような空行は通常、次のブロックとの区切りに使われる。
+                # 直前が実質的な行なら区切り
+                if len(function_lines) > 1 and function_lines[-1].strip():
+                    break
+            function_lines.append(line)  # そうでなければ（インデントがbase以上など）、空行も関数の一部
+            continue
+
+        # 非空行の場合
+        if current_indent_level > base_indent_level:
+            function_lines.append(line)  # インデントが深い場合は関数本体の一部
+        elif current_indent_level == base_indent_level:
+            # インデントがdef行と同じ場合、通常は新しい文の始まり（次の関数定義、クラス定義、トップレベルのコード）。
+            # よって、現在の関数はここで終わりとみなす。
+            break
+        else:  # current_indent_level < base_indent_level
+            # インデントが浅くなったら明確に関数の終わり。
+            break
+
+    # 関数定義として抽出された行の末尾にある、実質的な内容のない空行（例：インデントのみの行、ただの改行）を削除
+    while len(function_lines) > 0 and not function_lines[-1].strip():
+        function_lines.pop()
+
+    return "\n".join(function_lines) if function_lines else None
+
+# --- 使用例 ---
+
+
+def parse_my_text(text_to_parse: str) -> str | None:
+    """
+    テキストから最後のPythonコードブロック内の最後の関数定義を抽出するメイン処理。
+    """
+    # ステップ1&2: 最後のPythonコードブロックの内容を抽出
+    code_block_content = extract_last_python_block_content(text_to_parse)
+
+    if code_block_content is None:
+        # print("エラー: Pythonコードブロックが見つかりませんでした。")
+        return None
+
+    # ステップ3&4: コードブロック内から最後の関数定義を抽出
+    function_definition = find_last_function_in_code(code_block_content)
+
+    if function_definition is None:
+        # print(f"エラー: コードブロック内に関数定義が見つかりませんでした。\nブロック内容:\n{code_block_content}")
+        # 関数定義がない場合でも、コードブロックの内容そのものを返したい場合は、
+        # ここで `return code_block_content` のように変更できます。
+        # 今回は関数定義が見つからない場合は None を返します。
+        return None
+
+    return function_definition

@@ -4,7 +4,7 @@ from funsearch import archipelago
 from funsearch import function
 from funsearch import cluster
 import inspect
-from .py_mutation_engine import PyMutationEngine
+from .py_mutation_engine import PyMutationEngineUnstructured
 from infra.ai import llm
 from google import genai
 
@@ -47,7 +47,7 @@ def spawn_evolver(config: EvolverConfig) -> archipelago.Evolver:
     gemini_client = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
     # mutation engine の準備
     docstring = inspect.getdoc(config.equation)
-    mutation_engine = PyMutationEngine(
+    mutation_engine = PyMutationEngineUnstructured(
         prompt_comment=config.prompt_comment,
         docstring=docstring or "",
         gemini_client=gemini_client

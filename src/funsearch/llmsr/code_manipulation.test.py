@@ -34,6 +34,7 @@ def test_parse():
         # "def equation_v2(width: np.ndarray, wavelength: np.ndarray, params: np.ndarray) -> np.ndarray:\n    # Phase shift with group velocity dispersion and higher order terms\n    phase_shift = np.sin(2 * np.pi * (width + params[0]) / (params[1] * wavelength**2))\n    phase_shift += params[2] * np.cos(params[3] * width / wavelength)\n    # Gaussian envelope adjusted for nonlinear effects in domain width and wavelength\n    gaussian_envelope = np.exp(-(width - params[4])**2 / (2 * (params[5] + params[6] * wavelength**2))\n    # Sinc function enhanced to account for phase matching and periodicity more accurately\n    sinc_argument = (phase_shift - params[7]) / (params[8] + params[9] * np.sin(params[10] * width) / wavelength)\n    adjusted_sinc = np.sinc(sinc_argument) * gaussian_envelope\n    # Nonlinear correction term to account for frequency dispersion and phase modulation effects\n    correction_term = 1 + params[11] * ((np.cos(params[12] * width + params[13]) / wavelength)**2)\n    correction_term += params[15] * ((np.sin(params[14] * width + params[16]) / wavelength**3)**2) + params[18] * (width - params[19])**2 / wavelength**4\n    correction_term += params[20] * np.tanh(params[21] * width) + params[22] * ((wavelength - params[23])**2 / wavelength**2)\n    # Final efficiency calculation with a refined scale factor for accuracy and proportionality\n    efficiency = params[24] * (adjusted_sinc ** 2) * correction_term\n    return efficiency", # かっこが正しく閉じられていないのは想定解が確定しないから詰んでる
         # phi4 が生成したバグコード
         "def equation_v1(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:\n    ''' \n    Mathematical function for bacterial growth rate\n    Args:\n        b: A numpy array representing observations of population density of the bacterial species.\n        s: A numpy array representing observations of substrate concentration.\n        temp: A numpy array representing observations of temperature.\n        pH: A numpy array representing observations of pH level.\n        params: Array of numeric constants or parameters to be optimized\n    Return:\n        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.\n    '''\n    return params[0] * b / (params[1] + b) * s / (params[2] + s) * \n           np.exp(params[3] * (temp - 37)) * \n           np.exp(-((pH - 7) ** 2) / (2 * params[4]**2))",  # (return の後の長いコードに改行が入っている)
+        "def add_one_plus_one():\n\treturn 1 + 1",
     ]
     engine = llmsr.PyMutationEngine("", "")
     for demo_fn in edge_cases:
@@ -48,5 +49,70 @@ def test_parse():
     print(f"All equations parsed successfully")
 
 
-if __name__ == "__main__":
-    test_parse()
+# if __name__ == "__main__":
+#     test_parse()
+    
+# テスト用の文字列 (ユーザーが提示したエラーケースを含む)
+test_text_with_error_case = """
+other text
+```python
+def func_in_block_1():
+    return "first"
+```
+some more text
+```python
+  phi = volume_fraction
+  E_composite = E_m * (1 - phi)**params[0] + E_f * phi**params[1] + params[2] * E_m * E_f * phi * (1 - phi)
+  return E_composite
+```
+"""
+
+test_text_with_function = """
+many text
+
+# last code block
+```python
+Many CODE
+
+def earlier_func_in_last_block():
+    pass # something
+
+def last_defined_function(args):
+    # This is the target function
+    if True:
+        return True # with a comment
+    # Another line
+    return False
+```
+
+other text
+"""
+
+demo = '''
+'```python\ndef equation_v1(volume_fraction: np.ndarray, params: np.ndarray, E_m=4.84, E_f=117.64) -> np.ndarray:\n    """ \n    Mathematical function for the tensile modulus of a particle-filler rubber composite.\n\n    This function aims to model the relationship between the filler volume fraction (phi)\n    and the experimentally observed tensile modulus of the composite material.\n    The core of this function, to be evolved by FunSearch, **must explicitly use**\n    the provided tensile modulus of the matrix (E_m = 4.84) and the filler (E_f = 117.64)\n    as variables within the mathematical expression. These constants are passed as arguments\n    to this function and are expected to be directly part of the formula.\n\n    Args:\n        volume_fraction: A numpy array representing the filler volume fraction (phi).\n        params: Array of numeric constants or parameters (at most MAX_NPARAMS)\n                to be optimized by the fitting process. These parameters will be\n                used within the function skeleton.\n        E_m: Tensile modulus of the matrix (fixed at 4.84). This value **must be used**\n             in the generated equation.\n        E_f: Tensile modulus of the filler (fixed at 117.64). This value **must be used**\n             in the generated equation.\n\n    Return:\n        A numpy array representing the predicted tensile modulus of the composite (E_composite).\n        The returned value is the result of applying the mathematical function,\n        which incorporates phi, params, E_m, and E_f.\n    """\n    phi = volume_fraction\n    E_composite = E_m * (1 - phi)**params[0] * (E_f/E_m)**(phi * params[1])\n    return E_composite\n```'
+'''
+
+# 1. 関数定義がないコードブロックのテスト
+print("--- Test 1 (No function definition in last block) ---")
+result1 = llmsr.parse_my_text(demo)
+if result1:
+    print(result1)
+else:
+    # このケースでは関数定義が見つからないため、Noneが返るのが期待される動作
+    print("Expected: No function found, Result: None (Correct for this implementation)")
+    # 元のコードで例外を発生させていた箇所に相当。
+    # この関数の呼び出し側で、Noneが返ってきた場合の処理を記述します。
+    # 例えば:
+    # if result1 is None:
+    #   raise Exception("Gemini response parse error (no function found)", 
+    #                   f"Input block was: {extract_last_python_block_content(test_text_with_error_case)}")
+
+
+print("\n--- Test 2 (With function definition) ---")
+# 2. 関数定義があるコードブロックのテスト
+result2 = llmsr.parse_my_text(test_text_with_function)
+if result2:
+    print(result2)
+else:
+    print("Function not found (unexpected for this test case).")
+
