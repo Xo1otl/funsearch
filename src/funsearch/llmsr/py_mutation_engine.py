@@ -183,7 +183,7 @@ import numpy as np
 import scipy
 
 # Initialize parameters
-MAX_NPARAMS = 10
+MAX_NPARAMS = 1
 PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 
