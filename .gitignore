@@ -2,3 +2,4 @@ __pycache__/
 *.log
 out/
 !examples/logs/npda_numpy_20250405_082119/*
+private/

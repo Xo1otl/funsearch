@@ -10,6 +10,7 @@ else
   set script_name "$argv[1]"
 end
 
-set output_dir "$ws_root/examples/logs/$script_name"_"$timestamp"
+set output_dir "$ws_root/private/logs/$script_name"_"$timestamp"
 mkdir -p $output_dir
-nohup python "$ws_root/examples/$script_name.py" > "$output_dir/stdout.log" 2> "$output_dir/stderr.log" &
+echo "Output directory: $output_dir"
+nohup python "$ws_root/private/$script_name.py" > "$output_dir/stdout.log" 2> "$output_dir/stderr.log" &
