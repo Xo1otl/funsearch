@@ -21,9 +21,6 @@ E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)
 
 variables_specs = r'''
 \phi: フィラー体積分率 (実験で扱う入力)
-E_m: マトリックスの引張弾性率（固定値 4.84）
-E_f: フィラーの引張弾性率（固定値 117.64）
-E_composite: 複合材料の引張弾性率（実験で得られる出力）
 '''
 
 insights_text = r'''

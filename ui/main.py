@@ -1,32 +1,32 @@
+import os
+import secrets
+import string
 import gradio as gr
 import time
 import threading
 import queue
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
 import traceback
-from funsearch import llmsr
-from funsearch import datadriven
-from funsearch import function
-from funsearch import archipelago
-from funsearch import cluster
-# Google AI 関連 (ユーザー指定の形式)
+from funsearch import llmsr, datadriven, function, archipelago, cluster
 from google import genai
-from infra.ai import llm  # ユーザー指定のモジュール
+from infra.ai import llm
+
+# --- 定数 ---
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
+gemini_client_for_converter = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+MAX_NPARAMS = 1
+UPDATE_HEADER = "## Best Functions Found:\n\n"
 
-gemini_client_for_converter: Optional[genai.Client] = genai.Client(
-    api_key=llm.GOOGLE_CLOUD_API_KEY)
+# --- グローバル変数 ---
+current_evolver: Optional[archipelago.Evolver] = None
+evolver_lock = threading.Lock()
+global_queue: Optional[queue.Queue] = None
 
 
-class MyGradioProfiler:
-    """
-    FunSearch のイベントを受け取り、整形したログメッセージを Queue に入れるクラス。
-    ユーザー提供の Profiler コードをベースにしています。
-    """
-
+class DetailedProfiler:
     def __init__(self, output_queue: queue.Queue):
-        self.output_queue = output_queue
+        self.q = output_queue
         self._evaluation_count = 0
         self._lock = threading.Lock()
         self._start_times_eval: Dict[int, float] = {}
@@ -70,34 +70,35 @@ class MyGradioProfiler:
                 message = f"Evaluation finished in {elapsed_time:.4f}s. Score: {self._get_score(event.payload)}"
             elif event.type == "on_best_island_improved":
                 with self._lock:
-                    current_eval_count = self._evaluation_count
+                    count = self._evaluation_count
                 message = "✨ Best island function improved!"
                 best_fn = event.payload.best_fn()
+                score = self._get_score(best_fn)
+                code = self._format_function(best_fn)
                 title = " Evaluated Function "
                 padding = (60 - len(title)) // 2
                 formatted_title = "=" * padding + title + \
                     "=" * (60 - len(title) - padding)
-                body = (f"""
-{formatted_title}
-{self._format_function(best_fn)}
-{'-' * 60}
-Score      : {self._get_score(best_fn)}
-Evaluations: {current_eval_count}
-{'=' * 60}
-""")
+                body = (
+                    f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}")
+                update_message = f"**Score: {score}** (Eval: {count})\n\n```python\n{code}\n```\n\n---\n\n"
+                self.q.put(('update', update_message))  # Send update message
             elif event.type == "on_best_fn_improved":
-                message = "Best function improved (within island)!"
-                title = " Evaluated Function "
+                with self._lock:  # 評価カウントを安全に取得
+                    count = self._evaluation_count
+                # メッセージを更新
+                message = "🏝️ Best function improved (within island)!"
+                best_fn = event.payload
+                score = self._get_score(best_fn)
+                code = self._format_function(best_fn)
+                title = " Island Best Function "  # タイトルを少し変更
                 padding = (60 - len(title)) // 2
                 formatted_title = "=" * padding + title + \
                     "=" * (60 - len(title) - padding)
-                body = (f"""
-{formatted_title}
-{self._format_function(event.payload)}
-{'-' * 60}
-Score: {self._get_score(event.payload)}
-{'=' * 60}
-""")
+                # on_best_island_improved と同様のフォーマットで body を生成
+                body = (
+                    f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}")
+                # ここでは ('update', ...) は送信しません (実行ログのみ)
             elif event.type == "on_islands_removed":
                 message = f"Removed islands: {[hex(id(island)) for island in event.payload]}"
             elif event.type == "on_islands_revived":
@@ -105,197 +106,151 @@ Score: {self._get_score(event.payload)}
             elif event.type == "on_fn_added":
                 message = f"New function added. Score: {self._get_score(event.payload)}"
             elif event.type == "on_fn_selected":
-                code_lengths_str = ", ".join(
-                    map(str, [len(self._format_function(fn)) for fn in event.payload[0]]))
-                message = f"Selected function. Lengths: [{code_lengths_str}]. Score: {self._get_score(event.payload[1])}"
+                lengths = [len(self._format_function(fn))
+                           for fn in event.payload[0]]
+                message = f"Selected fn. Lengths: {lengths}. Score: {self._get_score(event.payload[1])}"
             elif event.type == "on_mutate":
-                scores_str = ", ".join([self._get_score(fn)
-                                       for fn in event.payload])
-                message = f"Starting mutation. Scores: [{scores_str}]"
+                scores = [self._get_score(fn) for fn in event.payload]
+                message = f"Starting mutation. Scores: {scores}"
                 with self._lock:
                     self._start_times_mutate[thread_id] = current_time
             elif event.type == "on_mutated":
                 elapsed_time = -1.0
                 with self._lock:
                     start_time = self._start_times_mutate.pop(thread_id, None)
-                if start_time is not None:
-                    elapsed_time = current_time - start_time
-                scores_str = ", ".join([self._get_score(fn)
-                                       for fn in event.payload[0]])
-                message = f"Mutation finished in {elapsed_time:.4f}s. Scores: [{scores_str}]"
+                    if start_time is not None:
+                        elapsed_time = current_time - start_time
+                scores = [self._get_score(fn) for fn in event.payload[0]]
+                message = f"Mutation finished in {elapsed_time:.4f}s. Scores: {scores}"
 
-            body_section = f"\n{body}" if body else ""
-            log_message = f"| {event.type:<20} | {message}{body_section}\n"
-            self.output_queue.put(log_message)
+            if message:  # Only put if there is a message
+                log_message = f"| {event.type:<20} | {message}{body}\n"
+                self.q.put(('log', log_message))
 
         except Exception as e:
             tb_str = traceback.format_exc()
-            error_message = f"| Profiler Error          | Error: {e} | Event: {getattr(event, 'type', 'unknown')}\n{tb_str}\n"
-            self.output_queue.put(error_message)
-
-
-# --- FunSearch 実行ワーカー ---
-current_evolver = None
-evolver_lock = threading.Lock()
-log_queue_global: Optional[queue.Queue] = None
+            error_message = f"| Profiler Error          | {e} | {event.type}\n{tb_str}\n"
+            self.q.put(('log', error_message))
 
 
 def stop_funsearch_process():
-    """Stops the currently running FunSearch process."""
-    global current_evolver
-    global log_queue_global
-
+    """FunSearch プロセスを停止する。"""
+    global current_evolver, global_queue
     with evolver_lock:
         if current_evolver:
             try:
-                if log_queue_global:
-                    log_queue_global.put("--- Sending stop signal... ---\n")
+                if global_queue:
+                    global_queue.put(
+                        ('log', "--- Sending stop signal... ---\n"))
                 current_evolver.stop()
-                if log_queue_global:
-                    log_queue_global.put(
-                        "--- Stop signal sent successfully. ---\n")
+                if global_queue:
+                    global_queue.put(('log', "--- Stop signal sent. ---\n"))
+                current_evolver = None
             except Exception as e:
-                if log_queue_global:
-                    log_queue_global.put(
-                        f"| Error (Stop)          | Failed to send stop signal: {e}\n")
-        else:
-            # If the queue exists, send a message. Otherwise, print.
-            if log_queue_global:
-                log_queue_global.put(
-                    "| Info                  | No FunSearch process is currently running.\n")
-            else:
-                print("Stop clicked, but no process or queue found.")
+                if global_queue:
+                    global_queue.put(('log', f"| Error (Stop) | {e}\n"))
+        elif global_queue:
+            global_queue.put(('log', "| Info | No process running.\n"))
 
 
-def funsearch_worker(
-    q: queue.Queue,
-    formula_text: str,
-    variables_specs: str,
-    insights_text: str,
-    inputs: np.ndarray,
-    outputs: np.ndarray,
-):
+def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs):
+    """FunSearch を実行するワーカースレッド。"""
     global current_evolver
-    global log_queue_global
-    """FunSearch を実行し、ログを Queue に送信する関数。"""
     try:
-        q.put("--- Starting FunSearch Worker ---\n")
-
-        if not gemini_client_for_converter:
-            q.put("| Error                   | Google AI Client not available.\n")
-            q.put(None)
-            return
-
-        # 2. InputConverter
+        q.put(('log', "--- Starting FunSearch Worker ---\n"))
         converter = datadriven.InputConverter(gemini_client_for_converter)
-        q.put("2. Calling LLM via InputConverter...\n")
-        input_info = converter.convert(
-            formula_text=formula_text,
-            variables_specs=variables_specs,
-            insights_text=insights_text,
-        )
-        if input_info is None:
-            q.put(
-                "| Error                   | Failed to convert inputs via InputConverter.\n")
-            q.put(None)
+        q.put(('log', "2. Calling LLM...\n"))
+        info = converter.convert(formula, specs, insights)
+        if not info:
+            q.put(('log', "| Error | InputConverter failed.\n"))
             return
 
-        q.put("   - Code generated successfully.\n")
-        max_nparams = 1
-        equation_src = input_info["equation_src"]
-        docstring = input_info["docstring"]
-        prompt_comment = input_info["prompt_comment"]
         q.put(
-            f"--- Generated Code ---\n{equation_src}\n----------------------\n")
-
-        # 3. FunSearch 実行
-        profiler = MyGradioProfiler(q)
-        datasets = [datadriven.Dataset(
-            max_nparams=max_nparams, inputs=inputs, outputs=outputs)]
-        q.put("3. Starting FunSearch process (this may take time)...\n")
-        q.put("=" * 70 + "\n")
+            ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
+        profiler = DetailedProfiler(q)  # <<< 変更: DetailedProfiler を使用
+        datasets = [datadriven.Dataset(MAX_NPARAMS, inputs, outputs)]
+        q.put(('log', "3. Starting FunSearch...\n"))
+        q.put(('log', "=" * 70 + "\n"))  # <<< 区切り線を追加
 
         evolver = llmsr.spawn_evolver_for_mcp(
             llmsr.EvolverConfigForMCP(
-                equation_src=equation_src,
-                docstring=docstring,
-                evaluation_inputs=datasets,
-                evaluator=datadriven.dataset_evaluator,
-                prompt_comment=prompt_comment,
-                profiler_fn=profiler.profile,  # カスタム Profiler を渡す
-                max_nparams=max_nparams,
-            )
-        )
+                equation_src=info["equation_src"], docstring=info["docstring"],
+                evaluation_inputs=datasets, evaluator=datadriven.dataset_evaluator,
+                prompt_comment=info["prompt_comment"], profiler_fn=profiler.profile,
+                max_nparams=MAX_NPARAMS))
 
-        with evolver_lock:  # <<< 追加
-            current_evolver = evolver  # Set global evolver # <<< 追加
-
+        with evolver_lock:
+            current_evolver = evolver
         evolver.start()
-
-        q.put("=" * 70 + "\n")
-        q.put("4. FunSearch finished!\n")
+        q.put(('log', "=" * 70 + "\n"))  # <<< 区切り線を追加
+        q.put(('log', "4. FunSearch finished or stopped!\n"))
 
     except Exception as e:
-        tb_str = traceback.format_exc()
-        q.put(
-            f"| Error (Worker)          | An error occurred: {e}\n{tb_str}\n")
+        q.put(('log', f"| Error (Worker) | {e}\n{traceback.format_exc()}\n"))
     finally:
-        q.put(None)
+        with evolver_lock:
+            current_evolver = None
+        q.put(('end', None))
 
 
 def run_funsearch_process(formula, params, data, insights):
-    log_queue = queue.Queue()
+    """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
+    global global_queue
+    q = queue.Queue()
+    global_queue = q
+
     full_log = ""
+    update_list: List[str] = []
 
     if not all([formula, params, data]):
-        yield "Error: Please provide Formula, Parameters, and Data.\n"
+        yield "Error: Please provide all inputs.\n", ""
         return
-
-    full_log += "1. Parsing input data...\n"
-    yield full_log
-    time.sleep(0.1)
 
     try:
-        inputs_list, outputs_list = [], []
-        for line in data.strip().split('\n'):
-            parts = [float(p.strip()) for p in line.split(',')]
-            inputs_list.append(parts[:-1])
-            outputs_list.append(parts[-1])
-        inputs_np, outputs_np = np.array(inputs_list), np.array(outputs_list)
-        full_log += f"   - Found {len(inputs_list)} data points.\n"
-        yield full_log
+        lines = [list(map(float, line.split(',')))
+                 for line in data.strip().split('\n')]
+        inputs_np = np.array([l[:-1] for l in lines])
+        outputs_np = np.array([l[-1] for l in lines])
+        full_log += f"1. Parsed {len(lines)} data points.\n"
     except Exception as e:
-        full_log += f"   - Error parsing data: {e}.\n"
-        yield full_log
+        yield f"Error parsing data: {e}\n", ""
         return
 
-    runner_thread = threading.Thread(
+    yield full_log, UPDATE_HEADER
+
+    threading.Thread(
         target=funsearch_worker,
-        args=(log_queue, formula, params, insights, inputs_np, outputs_np),
+        args=(q, formula, params, insights, inputs_np, outputs_np),
         daemon=True,
-    )
-    runner_thread.start()
+    ).start()
 
     while True:
         try:
-            log_entry = log_queue.get(timeout=0.1)
-            if log_entry is None:
+            msg_type, content = q.get(timeout=1.0)
+
+            if msg_type == 'end':
                 break
-            full_log += log_entry
-            yield full_log
+            elif msg_type == 'log':
+                full_log += content
+            elif msg_type == 'update':
+                update_list.insert(0, content)
+
+            yield full_log, UPDATE_HEADER + "".join(update_list)
+
         except queue.Empty:
-            if not runner_thread.is_alive():
+            # ワーカーが'end'を送らずに終了した場合のフォールバック
+            if not current_evolver and not any(
+                    t for t in threading.enumerate() if t.daemon and t._target == funsearch_worker):  # type: ignore
+                full_log += "--- Worker thread seems to have ended unexpectedly. ---\n"
                 break
 
-    runner_thread.join(timeout=1)
+    global_queue = None
     full_log += "--- Process Ended ---\n"
-    yield full_log
+    yield full_log, UPDATE_HEADER + "".join(update_list)
 
 
-# --- デフォルト入力値 (元のコードから) ---
-default_formula = r'''理論式(latexでも可)とその説明を自由に記述してください。'''
-default_formula = r'''
-このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
+# --- デフォルト入力値 (変更なし) ---
+default_formula = r'''このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
 特に、充填材の体積分率（phi）と複合材料の引張弾性率（E_composite）の関係をモデル化します。
 基礎となる物理モデルは、複合材料の弾性率を定義するReussモデルです。
 Reussモデルは以下の式で表されます。
@@ -303,69 +258,47 @@ Reussモデルは以下の式で表されます。
 E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)
 
 ここで、E_mはマトリックスの引張弾性率であり、4.84で固定されています。
-E_fは充填材の引張弾性率であり、117.64で固定されています。
-'''
-default_params = '''\
-変数名1: 説明1
-変数名2: 説明2
-出力変数名: 関数が出力する値の説明を書いてください、これは必ず最後の行に書いてください\
-'''
-default_params = r'''
-\phi: フィラー体積分率 (実験で扱う入力)
-'''
-default_data = '''\
-0,4.84
-0.09,5.56
-0.17,6.13
-0.33,10.13
-0.44,14.96
-'''
-default_insights = r'''その他の着眼点やヒントを自由に記述してください。'''
-default_insights = r'''
-与えられた変数（phi, E_m, E_f）を用いて、複合材料の引張弾性率 E_composite を予測する関数 E_composite = f(phi, params, E_m, E_f) を進化させることです。
-進化の出発点は提供されたReussモデルとします。
-最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、Reussモデルを修正または拡張し、実験データとの適合性を向上させることを目指してください。
-例えば、モデルをスケーリングしたり、新しい項を追加したり、モデルの構成要素を変更したりといったアプローチが考えられます。
-最終的な目標は、基本的なReussモデルに対して、物理的に意味のある改善を見つけ出すことです。
-'''
+E_fは充填材の引張弾性率であり、117.64で固定されています。'''
+default_params = r'\phi: フィラー体積分率'
+default_data = '0,4.84\n0.09,5.56\n0.17,6.13\n0.33,10.13\n0.44,14.96'
+default_insights = '''あなたのタスクは与えられた変数（phi, E_m, E_f）を用いて、複合材料の引張弾性率 E_composite を予測する関数 E_composite = f(phi, params, E_m, E_f) を進化させることです。
+進化の出発点は提供されたReussモデルです。
+最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、自由に改良を重ねて、実験データとの適合性を向上させることを目指してください。
+最終的な目標は、基本的なReussモデルに対して、物理的に意味のある改善を見つけ出すことです。'''
 
 # --- Gradio UI 構築 ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
-    gr.Markdown("# FunSearch Gradio Interface (Actual Run)")
-    status = "Ready."
-    gr.Markdown(f"**Status:** {status}")
+    gr.Markdown("# FunSearch Gradio Interface (Detailed Log)")
 
     with gr.Row():
         with gr.Column(scale=1):
             formula_input = gr.Textbox(
-                lines=8, label="理論式", value=default_formula)
+                lines=5, label="理論式", value=default_formula)
             params_input = gr.Textbox(
-                lines=6, label="パラメータ説明", value=default_params)
+                lines=2, label="パラメータ説明", value=default_params)
             data_input = gr.Textbox(
-                lines=8, label="データ (CSV)", value=default_data)
+                lines=5, label="データ (CSV)", value=default_data)
             insights_input = gr.Textbox(
-                lines=5, label="着眼点", value=default_insights)
-            run_button = gr.Button("FunSearch 実行", variant="primary",
-                                   interactive=True)
-            stop_button = gr.Button("FunSearch 停止", variant="stop",
-                                    interactive=True)
-
+                lines=3, label="着眼点", value=default_insights)
+            run_button = gr.Button("実行", variant="primary")
+            stop_button = gr.Button("停止", variant="stop")
         with gr.Column(scale=2):
-            log_output = gr.Textbox(label="実行ログ", lines=30, interactive=False,
-                                    autoscroll=True, show_copy_button=True)
+            log_output = gr.Textbox(
+                label="実行ログ", lines=20, autoscroll=True, show_copy_button=True)  # <<< lines を増やした
+            update_output = gr.Markdown(label="更新ログ (Best Functions)")
 
     run_button.click(
         fn=run_funsearch_process,
         inputs=[formula_input, params_input, data_input, insights_input],
-        outputs=[log_output],
+        outputs=[log_output, update_output],
     )
+    stop_button.click(fn=stop_funsearch_process, inputs=None, outputs=None)
 
-    stop_button.click(  # <<< 追加 (ここから3行)
-        fn=stop_funsearch_process,
-        inputs=None,
-        outputs=None,
-    )
 # --- Gradio アプリケーションの起動 ---
 if __name__ == "__main__":
     print("Launching Gradio UI...")
-    demo.launch(share=True)
+    password = os.environ.get("GRADIO_PASSWORD") or ''.join(
+        secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+    print(f"Using password: {password}")
+    demo.launch(auth=("qunasys", password), share=True)
+    # demo.launch(share=True)

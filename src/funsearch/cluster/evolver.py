@@ -53,12 +53,21 @@ class Evolver(archipelago.Evolver):
         self.num_parallel = config.num_parallel
         self.reset_period = config.reset_period
         self._profilers: List[Callable[[archipelago.EvolverEvent], None]] = []
-        self.running: bool = False
+
+        self._stop_event = threading.Event()  # ★停止イベント
         self._thread: threading.Thread | None = None
-        self._best_score: function.FunctionScore = max(
-            [island.best_fn().score() for island in self.islands])
+
+        # self.islandsが空の場合のエラーを避ける
+        if self.islands:
+            self._best_score: function.FunctionScore = max(
+                [island.best_fn().score() for island in self.islands])
+        else:
+            self._best_score: function.FunctionScore = -float('inf')
 
     def _reset_islands(self):
+        if not self.islands:
+            return  # 島がない場合は何もしない
+
         # 一番良い島を取得
         best_island = max(
             self.islands, key=lambda island: island.best_fn().score())
@@ -69,10 +78,8 @@ class Evolver(archipelago.Evolver):
         if num_to_reset == 0:
             return
 
-        # 下位半分をリセット対象とする (LLM-SRと同じ基準)
+        # 下位半分をリセット対象とする
         to_reset = sorted_islands[:num_to_reset]
-
-        # 一番良い島の best_fn とスコアを使って、新しい島を生成する
         best_fn = best_island.best_fn()
 
         new_islands: List[archipelago.Island] = [Island(
@@ -82,19 +89,16 @@ class Evolver(archipelago.Evolver):
             cluster_profiler_fn=self.island_config.cluster_profiler_fn
         ) for _ in to_reset]
 
-        # 新しい島にもプロファイラを登録する必要がある
         for island in new_islands:
             island.use_profiler(self.island_config.island_profiler_fn)
 
         removed_islands = []
         new_iter = iter(new_islands)
-        # 対象の島を新しい島に置き換える
         for idx, island in enumerate(self.islands):
             if island in to_reset:
                 removed_islands.append(island)
                 self.islands[idx] = next(new_iter)
 
-        # プロファイラへのイベント通知
         for profiler_fn in self._profilers:
             profiler_fn(archipelago.OnIslandsRemoved(
                 type="on_islands_removed", payload=removed_islands))
@@ -107,55 +111,109 @@ class Evolver(archipelago.Evolver):
             future_to_island = {
                 executor.submit(island.request_mutation): island for island in self.islands
             }
-            for future in concurrent.futures.as_completed(future_to_island):
-                island = future_to_island[future]
-                try:
-                    _ = future.result(timeout=60)
-                except Exception as e:
-                    print(
-                        f"Error during mutation/evaluation for island {hex(id(island))}: {e}", file=sys.stderr)
-                    traceback.print_exc()
-                # この中で best_fn を更新してたら、数時間回してると全くイベントが呼ばれなくなる謎現象が発生した
 
-        # 仕方がないのでメインスレッドで best_fn 更新、通知の粒度は犠牲になるけど、これはさすがに呼ばれるやろ
-        # FIXME: 同期型島モデルの各サイクルごとの発火だからイベントが呼ばれたタイミングが正確に何回目なのか知る方法がない
-        best_island = max(self.islands, key=lambda i: i.best_fn().score())
-        if best_island.best_fn().score() > self._best_score:
-            self._best_score = best_island.best_fn().score()
-            for profiler_fn in self._profilers:
-                profiler_fn(archipelago.OnBestIslandImproved(
-                    type="on_best_island_improved", payload=best_island))
+            # ★ 停止イベントがセットされるか、すべてのフューチャーが完了するまでループ
+            while future_to_island and not self._stop_event.is_set():
+                try:
+                    # ★ waitを使用して、タイムアウト付きで待機
+                    done, not_done = concurrent.futures.wait(
+                        future_to_island.keys(),
+                        timeout=1.0,  # ★ 1秒のタイムアウト
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+
+                    # 完了したフューチャーを処理
+                    for future in done:
+                        island = future_to_island.pop(future)  # 処理済みとして削除
+                        try:
+                            _ = future.result()  # 完了しているのでタイムアウトなしで結果取得
+                        except Exception as e:
+                            print(
+                                f"Error during mutation/evaluation for island {hex(id(island))}: {e}", file=sys.stderr)
+                            traceback.print_exc()
+
+                    # ★ タイムアウトした場合、doneは空になる。
+                    # ★ ループは継続し、次のイテレーションで self._stop_event.is_set() がチェックされる。
+
+                except Exception as e:
+                    print(f"Error in thread pool wait: {e}", file=sys.stderr)
+                    traceback.print_exc()
+                    break  # エラー発生時はループを抜ける
+
+            # ★ ループが終了した場合 (停止シグナル or 全タスク完了 or エラー)
+            # ★ まだ実行中のタスクがある場合 (停止シグナルで抜けた場合)
+            if not_done:  # type: ignore
+                print(
+                    f"Cancelling {len(not_done)} ongoing tasks due to stop signal...")
+                # 注意: 実行中のタスクはキャンセルできないが、
+                # executorを抜けることで新しいタスクは実行されない。
+                # 必要であれば、executor.shutdown(wait=False, cancel_futures=True) (Python 3.9+) を試すこともできるが、
+                # withブロックを抜けるのが一般的。
+
+        # ★ 停止シグナルが来ていなければ、スコアを更新
+        if not self._stop_event.is_set() and self.islands:
+            best_island = max(self.islands, key=lambda i: i.best_fn().score())
+            if best_island.best_fn().score() > self._best_score:
+                self._best_score = best_island.best_fn().score()
+                for profiler_fn in self._profilers:
+                    profiler_fn(archipelago.OnBestIslandImproved(
+                        type="on_best_island_improved", payload=best_island))
 
     def _run(self):
         last_reset_time = time.time()
-        while self.running:
-            # TODO: 並列で処理するけど、全部一斉に終わらないと次に行かない設計になってる、ちょっと効率悪いから、時間があれば直そう
+        # ★ 停止イベントがセットされるまでループ
+        while not self._stop_event.is_set():
             self._evolve_islands()
-            # FIXME: monkey patch なのでもっとましな設定方法や evaluate で完結する対処法ないか考える
-            jax.clear_caches()  # これがないとメモリリークする
-            # Check if it's time to reset low-scoring islands.
+
+            # ★ _evolve_islands が停止イベントをチェックするので、ここで再度チェック
+            if self._stop_event.is_set():
+                break
+
+            jax.clear_caches()
+
             if time.time() - last_reset_time >= self.reset_period:
-                self._reset_islands()
-                last_reset_time = time.time()
+                # ★ リセット中にも停止イベントをチェックできるように、
+                #    _reset_islands をより頻繁にチェックするように変更するか、
+                #    _reset_islands 内でもチェックすることが望ましいかもしれないが、
+                #    ここでは元のロジックを維持する。
+                if not self._stop_event.is_set():
+                    self._reset_islands()
+                    last_reset_time = time.time()
+
+            # ★ ループの最後に短いスリープを入れると、
+            #    CPU使用率を少し抑えられる場合があるが、必須ではない。
+            # time.sleep(0.1)
+
         print("<<< evolution stopped")
 
     def start(self):
         # Begin evolution in a background thread.
-        self.running = True
+        self._stop_event.clear()  # ★ 停止イベントをクリア
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         try:
-            while True:
+            # ★ このループはメインスレッドをブロックする。
+            #    必要であれば、メインスレッドで他の処理を行うことも可能。
+            while self._thread.is_alive():  # スレッドが生きている間待機
                 time.sleep(1)
         except KeyboardInterrupt:
             print("Stopping evolver... Waiting for threads to finish.")
             self.stop()
+            # KeyboardInterrupt後もjoinを待つ
+            if self._thread is not None and self._thread.is_alive():
+                self._thread.join()
 
     def stop(self) -> None:
         # Signal the thread to stop and wait for it to finish.
-        self.running = False
+        print("Setting stop event...")
+        self._stop_event.set()  # ★ 停止イベントをセット
+
+        # ★ 自分自身でない場合のみ join する
         if self._thread is not None and threading.current_thread() != self._thread:
-            self._thread.join()
+            print("Joining evolution thread...")
+            self._thread.join(timeout=10)  # ★ タイムアウト付きjoin
+            if self._thread.is_alive():
+                print("Evolution thread did not stop in time.")
 
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
