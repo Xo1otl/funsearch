@@ -69,7 +69,7 @@ Carefully analyze the input information above and generate a JSON object contain
 - `python_docstring`: A comprehensive and well-formatted Python docstring for the function FunSearch will evolve. It should follow standard conventions (like Google or NumPy style) and clearly explain the function's purpose, its arguments, and what it returns. Specifically, include:
     - An 'Variables:' section: List each input variable, specify its type (e.g., `np.ndarray`), and provide a clear description of what it represents.
     - A 'Returns:' section: Describe the return value, specify its type, and explain its meaning in the context of the formula.
-- `prompt_comment_text`: An instruction comment for FunSearch's LLM. **It must clearly the original mathematical function (identified from `formula_text`) that serves as the base for evolution.** Following this, it should provide guidance on how to improve or evolve this function, possibly incorporating insights.
+- `prompt_comment_text`: An instruction comment for FunSearch's LLM. **It must clearly the original mathematical function (identified from `formula_text`) that serves as the base for evolution.** Following this, it can provide context incorporating insights and formula description.
 
 
 Now, start generating the JSON object.

@@ -45,7 +45,7 @@ class DetailedProfiler:
                 score = fn_or_payload.score()
             elif isinstance(fn_or_payload, tuple) and len(fn_or_payload) > 1:
                 score = fn_or_payload[1]
-            return f"{score:.4f}" if score is not None else "N/A"
+            return f"{score}" if score is not None else "N/A"
         except Exception:
             return "?.???"
 
@@ -300,5 +300,5 @@ if __name__ == "__main__":
     password = os.environ.get("GRADIO_PASSWORD") or ''.join(
         secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
     print(f"Using password: {password}")
-    demo.launch(auth=("qunasys", password), share=True)
-    # demo.launch(share=True)
+    # demo.launch(auth=("qunasys", password), share=True)
+    demo.launch(share=True)
