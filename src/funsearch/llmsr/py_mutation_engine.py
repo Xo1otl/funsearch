@@ -13,12 +13,13 @@ class ResponseSchema(BaseModel):
 
 
 class PyMutationEngine(function.MutationEngine):
-    def __init__(self, prompt_comment: str, docstring: str, gemini_client: None | genai.Client = None):
+    def __init__(self, prompt_comment: str, docstring: str, gemini_client: None | genai.Client = None, max_nparams: int = 10):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
         self._prompt_comment = prompt_comment
         self._docstring = docstring
         self._gemini_client = gemini_client
+        self._max_nparams = max_nparams
 
     def _ask_gemini(self, prompt: str) -> str:
         if self._gemini_client is None:
@@ -96,7 +97,7 @@ import numpy as np
 import scipy
 
 # Initialize parameters
-MAX_NPARAMS = 10
+MAX_NPARAMS = {self._max_nparams}
 PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 
@@ -130,12 +131,13 @@ Implement `equation_v{len(skeletons)}` by **modifying its calculation logic** fo
 
 
 class PyMutationEngineUnstructured(function.MutationEngine):
-    def __init__(self, prompt_comment: str, docstring: str, gemini_client: None | genai.Client = None):
+    def __init__(self, prompt_comment: str, docstring: str, gemini_client: None | genai.Client = None, max_nparams: int = 10):
         self._profilers: List[Callable[[
             function.MutationEngineEvent], None]] = []
         self._prompt_comment = prompt_comment
         self._docstring = docstring
         self._gemini_client = gemini_client
+        self._max_nparams = max_nparams
 
     def _ask_gemini(self, prompt: str) -> str:
         if self._gemini_client is None:
@@ -183,7 +185,7 @@ import numpy as np
 import scipy
 
 # Initialize parameters
-MAX_NPARAMS = 1
+MAX_NPARAMS = {self._max_nparams}
 PRAMS_INIT = [1.0] * MAX_NPARAMS
 
 
