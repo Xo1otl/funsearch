@@ -15,7 +15,6 @@ from infra.ai import llm
 # --- 定数 ---
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
 gemini_client_for_converter = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
-MAX_NPARAMS = 1
 UPDATE_HEADER = "## Best Functions Found:\n\n"
 
 # --- グローバル変数 ---
@@ -25,12 +24,14 @@ global_queue: Optional[queue.Queue] = None
 
 
 class DetailedProfiler:
-    def __init__(self, output_queue: queue.Queue):
+    def __init__(self, output_queue: queue.Queue, max_mutations):
         self.q = output_queue
         self._evaluation_count = 0
         self._lock = threading.Lock()
         self._start_times_eval: Dict[int, float] = {}
         self._start_times_mutate: Dict[int, float] = {}
+        self.max_mutations = max_mutations  # <<< 最大変異回数を保持
+        self._mutation_count = 0
 
     def _format_function(self, fn: Any) -> str:
         try:
@@ -115,13 +116,28 @@ class DetailedProfiler:
                 with self._lock:
                     self._start_times_mutate[thread_id] = current_time
             elif event.type == "on_mutated":
+                should_stop = False
                 elapsed_time = -1.0
                 with self._lock:
                     start_time = self._start_times_mutate.pop(thread_id, None)
                     if start_time is not None:
                         elapsed_time = current_time - start_time
+
+                    self._mutation_count += 1  # カウントアップ
+                    count = self._mutation_count
+
+                    # 最大回数に達したかチェック
+                    if self.max_mutations and count >= self.max_mutations:
+                        should_stop = True
+
                 scores = [self._get_score(fn) for fn in event.payload[0]]
                 message = f"Mutation finished in {elapsed_time:.4f}s. Scores: {scores}"
+
+                # 最大回数に達していれば、停止リクエストをキューに送る
+                if should_stop:
+                    stop_msg = f"\n--- Max mutations ({self.max_mutations}) reached. Requesting stop. ---"
+                    message += stop_msg
+                    self.q.put(('stop_request', 'Max mutations reached'))
 
             if message:  # Only put if there is a message
                 log_message = f"| {event.type:<20} | {message}{body}\n"
@@ -153,7 +169,7 @@ def stop_funsearch_process():
             global_queue.put(('log', "| Info | No process running.\n"))
 
 
-def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs):
+def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs, max_nparams, max_mutations):
     """FunSearch を実行するワーカースレッド。"""
     global current_evolver
     try:
@@ -167,22 +183,22 @@ def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs):
 
         q.put(
             ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
-        profiler = DetailedProfiler(q)  # <<< 変更: DetailedProfiler を使用
-        datasets = [datadriven.Dataset(MAX_NPARAMS, inputs, outputs)]
+        profiler = DetailedProfiler(q, max_mutations)
+        datasets = [datadriven.Dataset(max_nparams, inputs, outputs)]
         q.put(('log', "3. Starting FunSearch...\n"))
-        q.put(('log', "=" * 70 + "\n"))  # <<< 区切り線を追加
+        q.put(('log', "=" * 70 + "\n"))
 
         evolver = llmsr.spawn_evolver_for_mcp(
             llmsr.EvolverConfigForMCP(
                 equation_src=info["equation_src"], docstring=info["docstring"],
                 evaluation_inputs=datasets, evaluator=datadriven.dataset_evaluator,
                 prompt_comment=info["prompt_comment"], profiler_fn=profiler.profile,
-                max_nparams=MAX_NPARAMS))
+                max_nparams=max_nparams))
 
         with evolver_lock:
             current_evolver = evolver
         evolver.start()
-        q.put(('log', "=" * 70 + "\n"))  # <<< 区切り線を追加
+        q.put(('log', "=" * 70 + "\n"))
         q.put(('log', "4. FunSearch finished or stopped!\n"))
 
     except Exception as e:
@@ -193,7 +209,7 @@ def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs):
         q.put(('end', None))
 
 
-def run_funsearch_process(formula, params, data, insights):
+def run_funsearch_process(formula, params, data, insights, max_nparams, max_mutations):
     """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
     global global_queue
     q = queue.Queue()
@@ -220,7 +236,8 @@ def run_funsearch_process(formula, params, data, insights):
 
     threading.Thread(
         target=funsearch_worker,
-        args=(q, formula, params, insights, inputs_np, outputs_np),
+        args=(q, formula, params, insights,
+              inputs_np, outputs_np, max_nparams, max_mutations),
         daemon=True,
     ).start()
 
@@ -234,6 +251,10 @@ def run_funsearch_process(formula, params, data, insights):
                 full_log += content
             elif msg_type == 'update':
                 update_list.insert(0, content)
+            elif msg_type == 'stop_request':
+                full_log += f"--- Stop requested via queue: {content} ---\n"
+                stop_funsearch_process()
+                break
 
             yield full_log, UPDATE_HEADER + "".join(update_list)
 
@@ -265,6 +286,7 @@ default_insights = '''あなたのタスクは与えられた変数（phi, E_m, 
 進化の出発点は提供されたReussモデルです。
 最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、自由に改良を重ねて、実験データとの適合性を向上させることを目指してください。
 最終的な目標は、基本的なReussモデルに対して、物理的に意味のある改善を見つけ出すことです。'''
+default_nparams = 1  # 最大パラメータ数
 
 # --- Gradio UI 構築 ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
@@ -280,6 +302,12 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
                 lines=5, label="データ (CSV)", value=default_data)
             insights_input = gr.Textbox(
                 lines=3, label="着眼点", value=default_insights)
+            max_nparams_input = gr.Number(
+                label="最大パラメータ数", value=default_nparams, precision=0, step=1,
+                info="進化の仮定で追加できる最大のパラメータ数を指定します。")
+            max_mutations = gr.Number(
+                label="最大変異数", value=default_nparams, precision=0, step=1,
+                info="最大の変異回数、大きすぎるとAPIの料金が増えます")
             run_button = gr.Button("実行", variant="primary")
             stop_button = gr.Button("停止", variant="stop")
         with gr.Column(scale=2):
@@ -289,7 +317,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
 
     run_button.click(
         fn=run_funsearch_process,
-        inputs=[formula_input, params_input, data_input, insights_input],
+        inputs=[formula_input, params_input, data_input,
+                insights_input, max_nparams_input, max_mutations],
         outputs=[log_output, update_output],
     )
     stop_button.click(fn=stop_funsearch_process, inputs=None, outputs=None)
@@ -300,5 +329,5 @@ if __name__ == "__main__":
     password = os.environ.get("GRADIO_PASSWORD") or ''.join(
         secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
     print(f"Using password: {password}")
-    # demo.launch(auth=("qunasys", password), share=True)
-    demo.launch(share=True)
+    demo.launch(auth=("qunasys", password), share=True)
+    # demo.launch(share=True)
