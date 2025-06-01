@@ -5,39 +5,32 @@ import gradio as gr
 import time
 import threading
 import queue
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, List
 import numpy as np
 import traceback
 from funsearch import llmsr, datadriven, function, archipelago, cluster
 from google import genai
 from infra.ai import llm
 
-# --- 定数 ---
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
-gemini_client_for_converter = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
-UPDATE_HEADER = "## Best Functions Found:\n\n"
 
-# --- グローバル変数 ---
-current_evolver: Optional[archipelago.Evolver] = None
-evolver_lock = threading.Lock()
-global_queue: Optional[queue.Queue] = None
+# 定数
+GEMINI_CLIENT_FOR_CONVERTER = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+UPDATE_HEADER = "## Best Functions Found:\n\n"
 
 
 class DetailedProfiler:
-    def __init__(self, output_queue: queue.Queue, max_mutations):
+    def __init__(self, output_queue: queue.Queue, max_mutations: int, stop_callback):
         self.q = output_queue
-        self._evaluation_count = 0
-        self._lock = threading.Lock()
-        self._start_times_eval: Dict[int, float] = {}
-        self._start_times_mutate: Dict[int, float] = {}
-        self.max_mutations = max_mutations  # <<< 最大変異回数を保持
-        self._mutation_count = 0
+        self.evaluation_count = 0
+        self.mutation_count = 0
+        self.max_mutations = max_mutations
+        self.start_times_eval: Dict[int, float] = {}
+        self.start_times_mutate: Dict[int, float] = {}
+        self.stop_callback = stop_callback
 
     def _format_function(self, fn: Any) -> str:
-        try:
-            return str(fn.skeleton())
-        except Exception:
-            return "[Func Display Error]"
+        return str(fn.skeleton())
 
     def _get_score(self, fn_or_payload: Any) -> str:
         try:
@@ -56,221 +49,180 @@ class DetailedProfiler:
         current_time = time.perf_counter()
         thread_id = threading.get_ident()
 
-        try:
-            if event.type == "on_evaluate":
-                with self._lock:
-                    self._start_times_eval[thread_id] = current_time
-                message = "Starting evaluation..."
-            elif event.type == "on_evaluated":
-                elapsed_time = -1.0
-                with self._lock:
-                    start_time = self._start_times_eval.pop(thread_id, None)
-                    if start_time is not None:
-                        elapsed_time = current_time - start_time
-                    self._evaluation_count += 1
-                message = f"Evaluation finished in {elapsed_time:.4f}s. Score: {self._get_score(event.payload)}"
-            elif event.type == "on_best_island_improved":
-                with self._lock:
-                    count = self._evaluation_count
-                message = "✨ Best island function improved!"
-                best_fn = event.payload.best_fn()
-                score = self._get_score(best_fn)
-                code = self._format_function(best_fn)
-                title = " Evaluated Function "
-                padding = (60 - len(title)) // 2
-                formatted_title = "=" * padding + title + \
-                    "=" * (60 - len(title) - padding)
-                body = (
-                    f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}")
-                update_message = f"**Score: {score}** (Eval: {count})\n\n```python\n{code}\n```\n\n---\n\n"
-                self.q.put(('update', update_message))  # Send update message
-            elif event.type == "on_best_fn_improved":
-                with self._lock:  # 評価カウントを安全に取得
-                    count = self._evaluation_count
-                # メッセージを更新
-                message = "🏝️ Best function improved (within island)!"
-                best_fn = event.payload
-                score = self._get_score(best_fn)
-                code = self._format_function(best_fn)
-                title = " Island Best Function "  # タイトルを少し変更
-                padding = (60 - len(title)) // 2
-                formatted_title = "=" * padding + title + \
-                    "=" * (60 - len(title) - padding)
-                # on_best_island_improved と同様のフォーマットで body を生成
-                body = (
-                    f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}")
-                # ここでは ('update', ...) は送信しません (実行ログのみ)
-            elif event.type == "on_islands_removed":
-                message = f"Removed islands: {[hex(id(island)) for island in event.payload]}"
-            elif event.type == "on_islands_revived":
-                message = f"Revived islands: {[hex(id(island)) for island in event.payload]}"
-            elif event.type == "on_fn_added":
-                message = f"New function added. Score: {self._get_score(event.payload)}"
-            elif event.type == "on_fn_selected":
-                lengths = [len(self._format_function(fn))
-                           for fn in event.payload[0]]
-                message = f"Selected fn. Lengths: {lengths}. Score: {self._get_score(event.payload[1])}"
-            elif event.type == "on_mutate":
-                scores = [self._get_score(fn) for fn in event.payload]
-                message = f"Starting mutation. Scores: {scores}"
-                with self._lock:
-                    self._start_times_mutate[thread_id] = current_time
-            elif event.type == "on_mutated":
-                should_stop = False
-                elapsed_time = -1.0
-                with self._lock:
-                    start_time = self._start_times_mutate.pop(thread_id, None)
-                    if start_time is not None:
-                        elapsed_time = current_time - start_time
+        if event.type == "on_evaluate":
+            self.start_times_eval[thread_id] = current_time
+            message = "Starting evaluation..."
+        elif event.type == "on_evaluated":
+            elapsed_time = -1.0
+            start_time = self.start_times_eval.pop(thread_id, None)
+            if start_time is not None:
+                elapsed_time = current_time - start_time
+            self.evaluation_count += 1
+            message = f"Evaluation finished in {elapsed_time:.4f}s. Score: {self._get_score(event.payload)}"
+        elif event.type == "on_best_island_improved":
+            count = self.evaluation_count
+            message = "✨ Best island function improved!"
+            best_fn = event.payload.best_fn()
+            score = self._get_score(best_fn)
+            code = self._format_function(best_fn)
+            title = " Evaluated Function "
+            padding = (60 - len(title)) // 2
+            formatted_title = "=" * padding + title + \
+                "=" * (60 - len(title) - padding)
+            body = f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}"
+            update_message = f"**Score: {score}** (Eval: {count})\n\n```python\n{code}\n```\n\n---\n\n"
+            self.q.put(('update', update_message))
+        elif event.type == "on_best_fn_improved":
+            count = self.evaluation_count
+            message = "🏝️ Best function improved (within island)!"
+            best_fn = event.payload
+            score = self._get_score(best_fn)
+            code = self._format_function(best_fn)
+            title = " Island Best Function "
+            padding = (60 - len(title)) // 2
+            formatted_title = "=" * padding + title + \
+                "=" * (60 - len(title) - padding)
+            body = f"\n{formatted_title}\n{code}\n{'-' * 60}\nScore      : {score}\nEvaluations: {count}\n{'=' * 60}"
+        elif event.type == "on_islands_removed":
+            message = f"Removed islands: {[hex(id(island)) for island in event.payload]}"
+        elif event.type == "on_islands_revived":
+            message = f"Revived islands: {[hex(id(island)) for island in event.payload]}"
+        elif event.type == "on_fn_added":
+            message = f"New function added. Score: {self._get_score(event.payload)}"
+        elif event.type == "on_fn_selected":
+            lengths = [len(self._format_function(fn))
+                       for fn in event.payload[0]]
+            message = f"Selected fn. Lengths: {lengths}. Score: {self._get_score(event.payload[1])}"
+        elif event.type == "on_mutate":
+            self.start_times_mutate[thread_id] = current_time
+            scores = [self._get_score(fn) for fn in event.payload]
+            message = f"Starting mutation. Scores: {scores}"
+        elif event.type == "on_mutated":
+            elapsed_time = -1.0
+            start_time = self.start_times_mutate.pop(thread_id, None)
+            if start_time is not None:
+                elapsed_time = current_time - start_time
+            self.mutation_count += 1
+            count = self.mutation_count
 
-                    self._mutation_count += 1  # カウントアップ
-                    count = self._mutation_count
+            scores = [self._get_score(fn) for fn in event.payload[0]]
+            message = f"Mutation finished in {elapsed_time:.4f}s. Scores: {scores}"
 
-                    # 最大回数に達したかチェック
-                    if self.max_mutations and count >= self.max_mutations:
-                        should_stop = True
+            if self.max_mutations > 0 and count >= self.max_mutations:
+                message += f"\n--- Max mutations ({self.max_mutations}) reached. Stopping evolver. ---"
+                self.stop_callback()
+                self.q.put(('stop', 'Max mutations reached'))
 
-                scores = [self._get_score(fn) for fn in event.payload[0]]
-                message = f"Mutation finished in {elapsed_time:.4f}s. Scores: {scores}"
-
-                # 最大回数に達していれば、停止リクエストをキューに送る
-                if should_stop:
-                    stop_msg = f"\n--- Max mutations ({self.max_mutations}) reached. Requesting stop. ---"
-                    message += stop_msg
-                    self.q.put(('stop_request', 'Max mutations reached'))
-
-            if message:  # Only put if there is a message
-                log_message = f"| {event.type:<20} | {message}{body}\n"
-                self.q.put(('log', log_message))
-
-        except Exception as e:
-            tb_str = traceback.format_exc()
-            error_message = f"| Profiler Error          | {e} | {event.type}\n{tb_str}\n"
-            self.q.put(('log', error_message))
+        if message:
+            log_message = f"| {event.type:<20} | {message}{body}\n"
+            self.q.put(('log', log_message))
 
 
-def stop_funsearch_process():
-    """FunSearch プロセスを停止する。"""
-    global current_evolver, global_queue
-    with evolver_lock:
-        if current_evolver:
-            try:
-                if global_queue:
-                    global_queue.put(
-                        ('log', "--- Sending stop signal... ---\n"))
-                current_evolver.stop()
-                if global_queue:
-                    global_queue.put(('log', "--- Stop signal sent. ---\n"))
-                current_evolver = None
-            except Exception as e:
-                if global_queue:
-                    global_queue.put(('log', f"| Error (Stop) | {e}\n"))
-        elif global_queue:
-            global_queue.put(('log', "| Info | No process running.\n"))
-
-
-def funsearch_worker(q: queue.Queue, formula, specs, insights, inputs, outputs, max_nparams, max_mutations):
+def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
+                     inputs: np.ndarray, outputs: np.ndarray, max_nparams: int, max_mutations: int):
     """FunSearch を実行するワーカースレッド。"""
-    global current_evolver
+    evolver = None
     try:
         q.put(('log', "--- Starting FunSearch Worker ---\n"))
-        converter = datadriven.InputConverter(gemini_client_for_converter)
-        q.put(('log', "2. Calling LLM...\n"))
+        converter = datadriven.InputConverter(GEMINI_CLIENT_FOR_CONVERTER)
+        q.put(('log', "2. Calling LLM to convert input...\n"))
         info = converter.convert(formula, specs, insights)
-        if not info:
-            q.put(('log', "| Error | InputConverter failed.\n"))
+        if not info or not info.get("equation_src"):
+            q.put(('log', "| Error | InputConverter failed or returned empty source.\n"))
             return
 
         q.put(
             ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
-        profiler = DetailedProfiler(q, max_mutations)
+
+        # プロファイラーにevolverを停止する方法を提供
+        def stop_evolver():
+            if evolver:
+                evolver.stop()
+                q.put(('log', "--- Evolver stopped by profiler. ---\n"))
+
+        profiler = DetailedProfiler(q, max_mutations, stop_evolver)
+
         datasets = [datadriven.Dataset(max_nparams, inputs, outputs)]
-        q.put(('log', "3. Starting FunSearch...\n"))
+        q.put(('log', "3. Starting FunSearch evolver...\n"))
         q.put(('log', "=" * 70 + "\n"))
 
-        evolver = llmsr.spawn_evolver_for_mcp(
-            llmsr.EvolverConfigForMCP(
-                equation_src=info["equation_src"], docstring=info["docstring"],
-                evaluation_inputs=datasets, evaluator=datadriven.dataset_evaluator,
-                prompt_comment=info["prompt_comment"], profiler_fn=profiler.profile,
-                max_nparams=max_nparams))
+        evolver_config = llmsr.EvolverConfigForMCP(
+            equation_src=info["equation_src"], docstring=info["docstring"],
+            evaluation_inputs=datasets, evaluator=datadriven.dataset_evaluator,
+            prompt_comment=info["prompt_comment"], profiler_fn=profiler.profile,
+            max_nparams=max_nparams
+        )
+        evolver = llmsr.spawn_evolver_for_mcp(evolver_config)
 
-        with evolver_lock:
-            current_evolver = evolver
+        q.put(('log', "--- Evolver starting evolution process. ---\n"))
         evolver.start()
-        q.put(('log', "=" * 70 + "\n"))
-        q.put(('log', "4. FunSearch finished or stopped!\n"))
+        q.put(('log', "\n" + "=" * 70 + "\n"))
+        q.put(('log', "4. FunSearch evolver finished.\n"))
 
     except Exception as e:
         q.put(('log', f"| Error (Worker) | {e}\n{traceback.format_exc()}\n"))
     finally:
-        with evolver_lock:
-            current_evolver = None
         q.put(('end', None))
 
 
-def run_funsearch_process(formula, params, data, insights, max_nparams, max_mutations):
+def run_funsearch_process(formula: str, params: str, data: str, insights: str, max_nparams: int, max_mutations: int):
     """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
-    global global_queue
     q = queue.Queue()
-    global_queue = q
-
     full_log = ""
     update_list: List[str] = []
 
     if not all([formula, params, data]):
-        yield "Error: Please provide all inputs.\n", ""
+        yield "Error: Please provide Formula, Parameters, and Data.\n", UPDATE_HEADER
         return
 
     try:
         lines = [list(map(float, line.split(',')))
-                 for line in data.strip().split('\n')]
+                 for line in data.strip().split('\n') if line.strip()]
+        if not lines:
+            raise ValueError("No data points found or data is empty.")
         inputs_np = np.array([l[:-1] for l in lines])
         outputs_np = np.array([l[-1] for l in lines])
         full_log += f"1. Parsed {len(lines)} data points.\n"
     except Exception as e:
-        yield f"Error parsing data: {e}\n", ""
+        yield f"Error parsing data: {e}\n{traceback.format_exc()}\n", UPDATE_HEADER
         return
 
-    yield full_log, UPDATE_HEADER
+    yield full_log, UPDATE_HEADER + "".join(update_list)
 
-    threading.Thread(
+    worker_thread = threading.Thread(
         target=funsearch_worker,
-        args=(q, formula, params, insights,
-              inputs_np, outputs_np, max_nparams, max_mutations),
-        daemon=True,
-    ).start()
+        args=(q, formula, params, insights, inputs_np,
+              outputs_np, max_nparams, max_mutations),
+        daemon=True
+    )
+    worker_thread.start()
 
     while True:
         try:
             msg_type, content = q.get(timeout=1.0)
 
             if msg_type == 'end':
+                full_log += "--- FunSearch process ended. ---\n"
                 break
             elif msg_type == 'log':
-                full_log += content
+                full_log += str(content)
             elif msg_type == 'update':
-                update_list.insert(0, content)
-            elif msg_type == 'stop_request':
-                full_log += f"--- Stop requested via queue: {content} ---\n"
-                stop_funsearch_process()
-                break
+                update_list.insert(0, str(content))
+            elif msg_type == 'stop':
+                full_log += f"--- Evolution stopped: {content} ---\n"
 
             yield full_log, UPDATE_HEADER + "".join(update_list)
 
         except queue.Empty:
-            # ワーカーが'end'を送らずに終了した場合のフォールバック
-            if not current_evolver and not any(
-                    t for t in threading.enumerate() if t.daemon and t._target == funsearch_worker):  # type: ignore
-                full_log += "--- Worker thread seems to have ended unexpectedly. ---\n"
+            if not worker_thread.is_alive():
+                full_log += "--- Worker thread ended. ---\n"
                 break
 
-    global_queue = None
-    full_log += "--- Process Ended ---\n"
+    full_log += "--- FunSearch process completed. ---\n"
     yield full_log, UPDATE_HEADER + "".join(update_list)
 
 
-# --- デフォルト入力値 (変更なし) ---
+# --- デフォルト入力値 ---
 default_formula = r'''このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
 特に、充填材の体積分率（phi）と複合材料の引張弾性率（E_composite）の関係をモデル化します。
 基礎となる物理モデルは、複合材料の弾性率を定義するReussモデルです。
@@ -286,11 +238,12 @@ default_insights = '''あなたのタスクは与えられた変数（phi, E_m, 
 進化の出発点は提供されたReussモデルです。
 最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、自由に改良を重ねて、実験データとの適合性を向上させることを目指してください。
 最終的な目標は、基本的なReussモデルに対して、物理的に意味のある改善を見つけ出すことです。'''
-default_nparams = 1  # 最大パラメータ数
+default_nparams = 1
+default_max_mutations = 50
 
 # --- Gradio UI 構築 ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
-    gr.Markdown("# FunSearch Gradio Interface (Detailed Log)")
+    gr.Markdown("# FunSearch Gradio Interface (Simplified - Multi-User Ready)")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -304,30 +257,39 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
                 lines=3, label="着眼点", value=default_insights)
             max_nparams_input = gr.Number(
                 label="最大パラメータ数", value=default_nparams, precision=0, step=1,
-                info="進化の仮定で追加できる最大のパラメータ数を指定します。")
-            max_mutations = gr.Number(
-                label="最大変異数", value=default_nparams, precision=0, step=1,
-                info="最大の変異回数、大きすぎるとAPIの料金が増えます")
+                info="進化の過程で追加できる最大のパラメータ数を指定します。")
+            max_mutations_input = gr.Number(
+                label="変異回数", value=default_max_mutations, precision=0, step=1,
+                info="回数に達するまで停止しないので必ず適切な値を設定してください。")
+
             run_button = gr.Button("実行", variant="primary")
-            stop_button = gr.Button("停止", variant="stop")
+
         with gr.Column(scale=2):
             log_output = gr.Textbox(
-                label="実行ログ", lines=20, autoscroll=True, show_copy_button=True)  # <<< lines を増やした
+                label="実行ログ", lines=25, autoscroll=True, show_copy_button=True)
             update_output = gr.Markdown(label="更新ログ (Best Functions)")
 
     run_button.click(
         fn=run_funsearch_process,
         inputs=[formula_input, params_input, data_input,
-                insights_input, max_nparams_input, max_mutations],
+                insights_input, max_nparams_input, max_mutations_input],
         outputs=[log_output, update_output],
+        show_progress="full",
+        concurrency_limit=2
     )
-    stop_button.click(fn=stop_funsearch_process, inputs=None, outputs=None)
 
-# --- Gradio アプリケーションの起動 ---
 if __name__ == "__main__":
     print("Launching Gradio UI...")
-    password = os.environ.get("GRADIO_PASSWORD") or ''.join(
-        secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
-    print(f"Using password: {password}")
-    demo.launch(auth=("qunasys", password), share=True)
-    # demo.launch(share=True)
+    gradio_user = os.environ.get("GRADIO_USER", "qunasys")
+    gradio_pass = os.environ.get("GRADIO_PASSWORD")
+    if not gradio_pass:
+        gradio_pass = ''.join(secrets.choice(
+            string.ascii_letters + string.digits) for _ in range(16))
+        print(
+            f"No GRADIO_PASSWORD env var. Using generated password for user '{gradio_user}': {gradio_pass}")
+    else:
+        print(
+            f"Using password from GRADIO_PASSWORD env var for user '{gradio_user}'.")
+
+    auth_creds = (gradio_user, gradio_pass) if gradio_pass else None
+    demo.launch(auth=auth_creds, share=True)

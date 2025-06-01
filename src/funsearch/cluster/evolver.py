@@ -20,7 +20,6 @@ FunSearchにおける進化アルゴリズム実行エンジン(Evolver)の実�
 - 並列処理: `Evolver` は複数の `Island` の進化ステップ（変異と評価）を
   スレッドプールを用いて並列に実行します。
 """
-
 from typing import Callable
 from funsearch import profiler
 import sys
@@ -54,10 +53,11 @@ class Evolver(archipelago.Evolver):
         self.reset_period = config.reset_period
         self._profilers: List[Callable[[archipelago.EvolverEvent], None]] = []
 
-        self._stop_event = threading.Event()  # ★停止イベント
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
+        self._active_futures: set = set()  # ★ アクティブなfutureを追跡
 
-        # self.islandsが空の場合のエラーを避ける
         if self.islands:
             self._best_score: function.FunctionScore = max(
                 [island.best_fn().score() for island in self.islands])
@@ -65,20 +65,17 @@ class Evolver(archipelago.Evolver):
             self._best_score: function.FunctionScore = -float('inf')
 
     def _reset_islands(self):
-        if not self.islands:
-            return  # 島がない場合は何もしない
+        if not self.islands or self._stop_event.is_set():
+            return
 
-        # 一番良い島を取得
         best_island = max(
             self.islands, key=lambda island: island.best_fn().score())
-        # 島をスコアの低い順に並べ替える
         sorted_islands = sorted(
             self.islands, key=lambda island: island.best_fn().score())
         num_to_reset = len(sorted_islands) // 2
         if num_to_reset == 0:
             return
 
-        # 下位半分をリセット対象とする
         to_reset = sorted_islands[:num_to_reset]
         best_fn = best_island.best_fn()
 
@@ -105,115 +102,192 @@ class Evolver(archipelago.Evolver):
             profiler_fn(archipelago.OnIslandsRevived(
                 type="on_islands_revived", payload=new_islands))
 
+    def _timeout_request_mutation(self, island, timeout_seconds=5.0):
+        """タイムアウト付きでrequest_mutationを実行"""
+        def target():
+            return island.request_mutation()
+
+        # 別スレッドで実行
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(target)
+
+        try:
+            # タイムアウト付きで結果を待つ
+            result = future.result(timeout=timeout_seconds)
+            return result
+        except concurrent.futures.TimeoutError:
+            print(f"Mutation timeout for island {hex(id(island))}")
+            # タイムアウトした場合はNoneを返す（futureはバックグラウンドで実行継続）
+            return None
+        except Exception as e:
+            print(f"Mutation error for island {hex(id(island))}: {e}")
+            return None
+        finally:
+            executor.shutdown(wait=False)
+
     def _evolve_islands(self):
+        if self._stop_event.is_set():
+            return
+
         print(">>> evolving islands...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_parallel) as executor:
+
+        # ★ 短いタイムアウトで強制的に停止できるようにする
+        mutation_timeout = 3.0  # 3秒でタイムアウト
+
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.num_parallel)
+
+        try:
+            # ★ タイムアウト付きのmutation実行
             future_to_island = {
-                executor.submit(island.request_mutation): island for island in self.islands
+                self._executor.submit(self._timeout_request_mutation, island, mutation_timeout): island
+                for island in self.islands
             }
 
-            # ★ 停止イベントがセットされるか、すべてのフューチャーが完了するまでループ
+            self._active_futures = set(future_to_island.keys())
+
+            # ★ 非常に短いタイムアウトで頻繁にチェック
             while future_to_island and not self._stop_event.is_set():
                 try:
-                    # ★ waitを使用して、タイムアウト付きで待機
                     done, not_done = concurrent.futures.wait(
                         future_to_island.keys(),
-                        timeout=1.0,  # ★ 1秒のタイムアウト
+                        timeout=0.1,  # ★ 100msごとにチェック
                         return_when=concurrent.futures.FIRST_COMPLETED
                     )
 
-                    # 完了したフューチャーを処理
                     for future in done:
-                        island = future_to_island.pop(future)  # 処理済みとして削除
+                        island = future_to_island.pop(future)
+                        self._active_futures.discard(future)
                         try:
-                            _ = future.result()  # 完了しているのでタイムアウトなしで結果取得
+                            result = future.result()  # 既に完了しているので即座に取得
+                            # 結果の処理（スコア更新など）は停止中でなければ実行
+                            if result and not self._stop_event.is_set():
+                                pass  # 必要に応じて結果を処理
                         except Exception as e:
-                            print(
-                                f"Error during mutation/evaluation for island {hex(id(island))}: {e}", file=sys.stderr)
-                            traceback.print_exc()
+                            if not self._stop_event.is_set():
+                                print(
+                                    f"Error processing result for island {hex(id(island))}: {e}", file=sys.stderr)
 
-                    # ★ タイムアウトした場合、doneは空になる。
-                    # ★ ループは継続し、次のイテレーションで self._stop_event.is_set() がチェックされる。
+                    # ★ 停止チェック - 少しでも停止が要求されたらすぐに抜ける
+                    if self._stop_event.is_set():
+                        break
 
                 except Exception as e:
-                    print(f"Error in thread pool wait: {e}", file=sys.stderr)
-                    traceback.print_exc()
-                    break  # エラー発生時はループを抜ける
+                    if not self._stop_event.is_set():
+                        print(
+                            f"Error in thread pool wait: {e}", file=sys.stderr)
+                    break
 
-            # ★ ループが終了した場合 (停止シグナル or 全タスク完了 or エラー)
-            # ★ まだ実行中のタスクがある場合 (停止シグナルで抜けた場合)
-            if not_done:  # type: ignore
+            # ★ 停止時の強制終了処理
+            if self._stop_event.is_set() and future_to_island:
                 print(
-                    f"Cancelling {len(not_done)} ongoing tasks due to stop signal...")
-                # 注意: 実行中のタスクはキャンセルできないが、
-                # executorを抜けることで新しいタスクは実行されない。
-                # 必要であれば、executor.shutdown(wait=False, cancel_futures=True) (Python 3.9+) を試すこともできるが、
-                # withブロックを抜けるのが一般的。
+                    f"Force stopping {len(future_to_island)} ongoing tasks...")
 
-        # ★ 停止シグナルが来ていなければ、スコアを更新
+        finally:
+            # ★ executorの強制シャットダウン
+            if self._executor:
+                try:
+                    # Python 3.9+
+                    self._executor.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    # Python 3.8以下
+                    self._executor.shutdown(wait=False)
+                self._executor = None
+            self._active_futures.clear()
+
+        # スコア更新（停止中でなければ）
         if not self._stop_event.is_set() and self.islands:
-            best_island = max(self.islands, key=lambda i: i.best_fn().score())
-            if best_island.best_fn().score() > self._best_score:
-                self._best_score = best_island.best_fn().score()
-                for profiler_fn in self._profilers:
-                    profiler_fn(archipelago.OnBestIslandImproved(
-                        type="on_best_island_improved", payload=best_island))
+            try:
+                best_island = max(
+                    self.islands, key=lambda i: i.best_fn().score())
+                if best_island.best_fn().score() > self._best_score:
+                    self._best_score = best_island.best_fn().score()
+                    for profiler_fn in self._profilers:
+                        profiler_fn(archipelago.OnBestIslandImproved(
+                            type="on_best_island_improved", payload=best_island))
+            except Exception as e:
+                print(f"Error updating best score: {e}", file=sys.stderr)
 
     def _run(self):
         last_reset_time = time.time()
-        # ★ 停止イベントがセットされるまでループ
-        while not self._stop_event.is_set():
-            self._evolve_islands()
+        print("Evolution started...")
 
-            # ★ _evolve_islands が停止イベントをチェックするので、ここで再度チェック
-            if self._stop_event.is_set():
-                break
+        try:
+            while not self._stop_event.is_set():
+                # ★ 進化ステップ（短時間で終わるか、タイムアウトで強制終了）
+                self._evolve_islands()
 
-            jax.clear_caches()
+                # ★ 停止チェック
+                if self._stop_event.is_set():
+                    break
 
-            if time.time() - last_reset_time >= self.reset_period:
-                # ★ リセット中にも停止イベントをチェックできるように、
-                #    _reset_islands をより頻繁にチェックするように変更するか、
-                #    _reset_islands 内でもチェックすることが望ましいかもしれないが、
-                #    ここでは元のロジックを維持する。
+                # JAXキャッシュクリア（停止チェック後）
                 if not self._stop_event.is_set():
-                    self._reset_islands()
-                    last_reset_time = time.time()
+                    jax.clear_caches()
 
-            # ★ ループの最後に短いスリープを入れると、
-            #    CPU使用率を少し抑えられる場合があるが、必須ではない。
-            # time.sleep(0.1)
+                # ★ 停止チェック
+                if self._stop_event.is_set():
+                    break
 
-        print("<<< evolution stopped")
+                # リセット処理（停止チェック付き）
+                if time.time() - last_reset_time >= self.reset_period:
+                    if not self._stop_event.is_set():
+                        self._reset_islands()
+                        last_reset_time = time.time()
+
+                # ★ 非常に短いスリープで高い応答性を維持
+                for _ in range(10):  # 0.01秒 × 10 = 0.1秒
+                    if self._stop_event.is_set():
+                        break
+                    time.sleep(0.01)
+
+        except Exception as e:
+            if not self._stop_event.is_set():
+                print(f"Evolution error: {e}", file=sys.stderr)
+                traceback.print_exc()
+        finally:
+            print("<<< evolution stopped")
 
     def start(self):
-        # Begin evolution in a background thread.
-        self._stop_event.clear()  # ★ 停止イベントをクリア
+        if self._thread and self._thread.is_alive():
+            print("Evolver is already running")
+            return
+
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
         try:
-            # ★ このループはメインスレッドをブロックする。
-            #    必要であれば、メインスレッドで他の処理を行うことも可能。
-            while self._thread.is_alive():  # スレッドが生きている間待機
-                time.sleep(1)
+            # ★ 短い間隔でチェック
+            while self._thread.is_alive():
+                time.sleep(0.1)
         except KeyboardInterrupt:
-            print("Stopping evolver... Waiting for threads to finish.")
+            print("\nKeyboard interrupt received. Stopping evolver...")
             self.stop()
-            # KeyboardInterrupt後もjoinを待つ
+            # 短いタイムアウトで待機
             if self._thread is not None and self._thread.is_alive():
-                self._thread.join()
+                self._thread.join(timeout=3)
+                if self._thread.is_alive():
+                    print("Warning: Evolution thread did not stop gracefully")
 
     def stop(self) -> None:
-        # Signal the thread to stop and wait for it to finish.
-        print("Setting stop event...")
-        self._stop_event.set()  # ★ 停止イベントをセット
+        print("Stopping evolver...")
+        self._stop_event.set()
 
-        # ★ 自分自身でない場合のみ join する
+        # ★ アクティブなfutureを強制終了（無理やり）
+        if self._executor and not self._executor._shutdown:
+            print("Force shutting down thread pool executor...")
+            self._executor.shutdown(wait=False, cancel_futures=True)
+
+        # ★ 短いタイムアウトで待機
         if self._thread is not None and threading.current_thread() != self._thread:
-            print("Joining evolution thread...")
-            self._thread.join(timeout=10)  # ★ タイムアウト付きjoin
+            print("Waiting for evolution thread to stop...")
+            self._thread.join(timeout=2)  # ★ 2秒でタイムアウト
             if self._thread.is_alive():
-                print("Evolution thread did not stop in time.")
+                print(
+                    "Warning: Evolution thread did not stop in time, but stop signal sent.")
+            else:
+                print("Evolution thread stopped successfully.")
 
     def use_profiler(self, profiler_fn):
         self._profilers.append(profiler_fn)
