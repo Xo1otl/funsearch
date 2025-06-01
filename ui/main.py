@@ -13,21 +13,61 @@ from google import genai
 from infra.ai import llm
 
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
-
-# 定数
 GEMINI_CLIENT_FOR_CONVERTER = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
 UPDATE_HEADER = "## Best Functions Found:\n\n"
 
+sessions: Dict[str, Dict[str, Any]] = {}
+
+
+class CancellableInputConverter:
+    def __init__(self, client, session_hash: str):
+        self.client = client
+        self.session_hash = session_hash
+        self.original_converter = datadriven.InputConverter(client)
+
+    def convert(self, formula: str, specs: str, insights: str):
+        if self._is_cancelled():
+            raise InterruptedError("Conversion cancelled")
+        return self.original_converter.convert(formula, specs, insights)
+
+    def _is_cancelled(self) -> bool:
+        return sessions.get(self.session_hash, {}).get('cancelled', False)
+
 
 class DetailedProfiler:
-    def __init__(self, output_queue: queue.Queue, max_mutations: int, stop_callback):
+    def __init__(self, output_queue: queue.Queue, max_mutations: int, session_hash: str):
         self.q = output_queue
         self.evaluation_count = 0
         self.mutation_count = 0
         self.max_mutations = max_mutations
+        self.session_hash = session_hash
         self.start_times_eval: Dict[int, float] = {}
         self.start_times_mutate: Dict[int, float] = {}
-        self.stop_callback = stop_callback
+
+    def _check_stop_conditions(self) -> bool:
+        # キャンセルチェックを追加
+        if sessions.get(self.session_hash, {}).get('cancelled', False):
+            self._stop_evolver()
+            self.q.put(('log', "--- Process cancelled by user. ---\n"))
+            self.q.put(('stop', 'Cancelled by user'))
+            return True
+
+        if self.max_mutations > 0 and self.mutation_count >= self.max_mutations:
+            self._stop_evolver()
+            self.q.put(
+                ('log', f"--- Max mutations ({self.max_mutations}) reached. Stopping evolver. ---\n"))
+            self.q.put(('stop', 'Max mutations reached'))
+            return True
+
+        return False
+
+    def _stop_evolver(self):
+        """Evolverを停止"""
+        session_data = sessions.get(self.session_hash, {})
+        evolver = session_data.get('evolver')
+        if evolver is not None:
+            evolver.stop()
+            session_data['evolver'] = None
 
     def _format_function(self, fn: Any) -> str:
         return str(fn.skeleton())
@@ -44,6 +84,9 @@ class DetailedProfiler:
             return "?.???"
 
     def profile(self, event: AllEvent):
+        if self._check_stop_conditions():
+            return
+
         message = ""
         body = ""
         current_time = time.perf_counter()
@@ -104,14 +147,8 @@ class DetailedProfiler:
                 elapsed_time = current_time - start_time
             self.mutation_count += 1
             count = self.mutation_count
-
             scores = [self._get_score(fn) for fn in event.payload[0]]
             message = f"Mutation finished in {elapsed_time:.4f}s. Scores: {scores}"
-
-            if self.max_mutations > 0 and count >= self.max_mutations:
-                message += f"\n--- Max mutations ({self.max_mutations}) reached. Stopping evolver. ---"
-                self.stop_callback()
-                self.q.put(('stop', 'Max mutations reached'))
 
         if message:
             log_message = f"| {event.type:<20} | {message}{body}\n"
@@ -119,28 +156,34 @@ class DetailedProfiler:
 
 
 def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
-                     inputs: np.ndarray, outputs: np.ndarray, max_nparams: int, max_mutations: int):
-    """FunSearch を実行するワーカースレッド。"""
+                     inputs: np.ndarray, outputs: np.ndarray, max_nparams: int,
+                     max_mutations: int, session_hash: str):
     evolver = None
     try:
+        if sessions.get(session_hash, {}).get('cancelled', False):
+            q.put(('log', "--- Process cancelled before starting. ---\n"))
+            return
+
         q.put(('log', "--- Starting FunSearch Worker ---\n"))
-        converter = datadriven.InputConverter(GEMINI_CLIENT_FOR_CONVERTER)
+
+        converter = CancellableInputConverter(
+            GEMINI_CLIENT_FOR_CONVERTER, session_hash)
         q.put(('log', "2. Calling LLM to convert input...\n"))
+
         info = converter.convert(formula, specs, insights)
+
         if not info or not info.get("equation_src"):
             q.put(('log', "| Error | InputConverter failed or returned empty source.\n"))
+            return
+
+        if sessions.get(session_hash, {}).get('cancelled', False):
+            q.put(('log', "--- Process cancelled after conversion. ---\n"))
             return
 
         q.put(
             ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
 
-        # プロファイラーにevolverを停止する方法を提供
-        def stop_evolver():
-            if evolver:
-                evolver.stop()
-                q.put(('log', "--- Evolver stopped by profiler. ---\n"))
-
-        profiler = DetailedProfiler(q, max_mutations, stop_evolver)
+        profiler = DetailedProfiler(q, max_mutations, session_hash)
 
         datasets = [datadriven.Dataset(max_nparams, inputs, outputs)]
         q.put(('log', "3. Starting FunSearch evolver...\n"))
@@ -154,19 +197,44 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
         )
         evolver = llmsr.spawn_evolver_for_mcp(evolver_config)
 
+        if session_hash in sessions:
+            sessions[session_hash]['evolver'] = evolver
+
+        if sessions.get(session_hash, {}).get('cancelled', False):
+            q.put(('log', "--- Process cancelled before evolver start. ---\n"))
+            return
+
         q.put(('log', "--- Evolver starting evolution process. ---\n"))
         evolver.start()
         q.put(('log', "\n" + "=" * 70 + "\n"))
         q.put(('log', "4. FunSearch evolver finished.\n"))
 
+    except InterruptedError as e:
+        q.put(('log', f"--- Process interrupted: {e} ---\n"))
     except Exception as e:
         q.put(('log', f"| Error (Worker) | {e}\n{traceback.format_exc()}\n"))
     finally:
+        if session_hash in sessions:
+            session_data = sessions[session_hash]
+            if 'evolver' in session_data:
+                session_data['evolver'] = None
         q.put(('end', None))
 
 
-def run_funsearch_process(formula: str, params: str, data: str, insights: str, max_nparams: int, max_mutations: int):
+def run_funsearch_process(formula: str, params: str, data: str, insights: str,
+                          max_nparams: int, max_mutations: int, request: gr.Request):
     """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
+    session_hash = request.session_hash
+    if not session_hash:
+        yield "Error: No session hash found.\n", UPDATE_HEADER
+        return
+
+    sessions[session_hash] = {
+        'cancelled': False,
+        'evolver': None,
+        'worker_thread': None
+    }
+
     q = queue.Queue()
     full_log = ""
     update_list: List[str] = []
@@ -192,9 +260,11 @@ def run_funsearch_process(formula: str, params: str, data: str, insights: str, m
     worker_thread = threading.Thread(
         target=funsearch_worker,
         args=(q, formula, params, insights, inputs_np,
-              outputs_np, max_nparams, max_mutations),
+              outputs_np, max_nparams, max_mutations, session_hash),
         daemon=True
     )
+
+    sessions[session_hash]['worker_thread'] = worker_thread
     worker_thread.start()
 
     while True:
@@ -219,10 +289,52 @@ def run_funsearch_process(formula: str, params: str, data: str, insights: str, m
                 break
 
     full_log += "--- FunSearch process completed. ---\n"
+
+    if session_hash in sessions:
+        del sessions[session_hash]
+
     yield full_log, UPDATE_HEADER + "".join(update_list)
 
 
-# --- デフォルト入力値 ---
+def stop_funsearch_process(request: gr.Request):
+    """FunSearchプロセスを停止"""
+    session_hash = request.session_hash
+    if not session_hash:
+        gr.Error("Error: No session hash found.")
+        return
+
+    if session_hash not in sessions:
+        gr.Warning("停止するプロセスが見つかりませんでした。")
+        return
+
+    session_data = sessions[session_hash]
+
+    session_data['cancelled'] = True
+
+    evolver = session_data.get('evolver')
+    if evolver is not None:
+        evolver.stop()
+        session_data['evolver'] = None
+        gr.Info("Evolverを停止しました。")
+    else:
+        gr.Info("プロセスをキャンセルしました。")
+
+
+def cleanup_session(request: gr.Request):
+    session_hash = request.session_hash
+    if not session_hash or session_hash not in sessions:
+        return
+
+    session_data = sessions[session_hash]
+
+    session_data['cancelled'] = True
+
+    evolver = session_data.get('evolver')
+    if evolver is not None:
+        evolver.stop()
+        session_data['evolver'] = None
+
+
 default_formula = r'''このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
 特に、充填材の体積分率（phi）と複合材料の引張弾性率（E_composite）の関係をモデル化します。
 基礎となる物理モデルは、複合材料の弾性率を定義するReussモデルです。
@@ -241,9 +353,8 @@ default_insights = '''あなたのタスクは与えられた変数（phi, E_m, 
 default_nparams = 1
 default_max_mutations = 50
 
-# --- Gradio UI 構築 ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
-    gr.Markdown("# FunSearch Gradio Interface (Simplified - Multi-User Ready)")
+    gr.Markdown("# FunSearch Gradio Interface (With Enhanced Stop Button)")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -262,20 +373,31 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
                 label="変異回数", value=default_max_mutations, precision=0, step=1,
                 info="回数に達するまで停止しないので必ず適切な値を設定してください。")
 
-            run_button = gr.Button("実行", variant="primary")
+            with gr.Row():
+                run_button = gr.Button("実行", variant="primary")
+                stop_button = gr.Button("停止", variant="stop")
 
         with gr.Column(scale=2):
             log_output = gr.Textbox(
                 label="実行ログ", lines=25, autoscroll=True, show_copy_button=True)
             update_output = gr.Markdown(label="更新ログ (Best Functions)")
 
-    run_button.click(
+    run_event = run_button.click(
         fn=run_funsearch_process,
         inputs=[formula_input, params_input, data_input,
                 insights_input, max_nparams_input, max_mutations_input],
         outputs=[log_output, update_output],
         show_progress="full",
         concurrency_limit=2
+    )
+
+    stop_button.click(
+        fn=stop_funsearch_process,
+        inputs=None,
+    )
+
+    demo.unload(
+        fn=cleanup_session,
     )
 
 if __name__ == "__main__":
@@ -292,4 +414,4 @@ if __name__ == "__main__":
             f"Using password from GRADIO_PASSWORD env var for user '{gradio_user}'.")
 
     auth_creds = (gradio_user, gradio_pass) if gradio_pass else None
-    demo.launch(auth=auth_creds, share=True)
+    demo.launch(auth=auth_creds, share=True, server_name="0.0.0.0")
