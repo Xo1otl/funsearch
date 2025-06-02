@@ -6,11 +6,11 @@ authors = [{ name = "Xo1otl", email = "xolotl.mictl4n@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "google-genai (>=1.9.0,<2.0.0)",
-    "jax[cuda12]>=0.5.2",
-    "optax>=0.2.4",
-    "pandas>=2.2.3",
-    "gradio>=5.32.0",
+    "google-genai",
+    "jax[cuda12]",
+    "optax",
+    "pandas",
+    "gradio",
     "infra",
     "workspace",
 ]
