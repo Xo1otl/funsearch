@@ -1,10 +1,10 @@
-from typing import Callable, NamedTuple, List
+from typing import NamedTuple, List
 from funsearch import profiler
 from funsearch import archipelago
 from funsearch import function
 from funsearch import cluster
 from .py_mutation_engine import PyMutationEngineUnstructured
-from infra.ai import llm
+import os
 from google import genai
 
 
@@ -42,7 +42,13 @@ def spawn_evolver_for_mcp(config: EvolverConfigForMCP) -> archipelago.Evolver:
 ```
 """)
 
-    gemini_client = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+    try:
+        api_key = os.environ["GOOGLE_CLOUD_API_KEY"]
+    except KeyError:
+        from infra.ai import llm
+        api_key = llm.GOOGLE_CLOUD_API_KEY
+    
+    gemini_client = genai.Client(api_key=api_key)
     # mutation engine の準備
     docstring = config.docstring
     mutation_engine = PyMutationEngineUnstructured(

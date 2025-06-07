@@ -10,10 +10,16 @@ import numpy as np
 import traceback
 from funsearch import llmsr, datadriven, function, archipelago, cluster
 from google import genai
-from infra.ai import llm
 
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
-GEMINI_CLIENT_FOR_CONVERTER = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+
+try:
+    api_key = os.environ["GOOGLE_CLOUD_API_KEY"]
+except KeyError:
+    from infra.ai import llm
+    api_key = llm.GOOGLE_CLOUD_API_KEY
+
+GEMINI_CLIENT_FOR_CONVERTER = genai.Client(api_key=api_key)
 UPDATE_HEADER = "## Best Functions Found:\n\n"
 
 sessions: Dict[str, Dict[str, Any]] = {}

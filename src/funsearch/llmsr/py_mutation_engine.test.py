@@ -1,10 +1,16 @@
 from google import genai
 from funsearch import llmsr
-from infra.ai import llm
+import os
 
 
 def test_py_mutation_engine():
-    gemini_client = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+    try:
+        api_key = os.environ["GOOGLE_CLOUD_API_KEY"]
+    except KeyError:
+        from infra.ai import llm
+        api_key = llm.GOOGLE_CLOUD_API_KEY
+    
+    gemini_client = genai.Client(api_key=api_key)
     engine = llmsr.PyMutationEngine(
         prompt_comment="",
         docstring="",

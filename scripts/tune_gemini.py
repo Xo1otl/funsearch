@@ -2,9 +2,15 @@
 
 from google import genai
 from google.genai import types
-from infra.ai import llm
+import os
 
-client = genai.Client(api_key=llm.GOOGLE_CLOUD_API_KEY)
+try:
+    api_key = os.environ["GOOGLE_CLOUD_API_KEY"]
+except KeyError:
+    from infra.ai import llm
+    api_key = llm.GOOGLE_CLOUD_API_KEY
+
+client = genai.Client(api_key=api_key)
 
 for model_info in client.models.list():
     print(model_info.name)
