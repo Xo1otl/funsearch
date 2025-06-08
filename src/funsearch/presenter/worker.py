@@ -118,7 +118,7 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
 {specs}
 
 🏆 *Top Functions Found ({len(top_functions)}):*"""
-
+                top_functions.reverse()
                 messages = [header_message] + top_functions
                 success = notifier.send_message(messages)
                 q.put(('log', f"✅ Slack notification sent: {success}\n"))
