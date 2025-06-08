@@ -10,13 +10,3 @@ google_cloud_api_key = "your-google-cloud-api-key"
 # GitHub repository for Cloud Build trigger (required for auto-build)
 github_owner = "your-github-username"
 github_repo  = "your-repo-name"
-
-# Optional: Custom domain
-# custom_domain = "funsearch.yourdomain.com"
-
-# Optional: Resource limits
-# max_scale             = 10
-# cpu_limit            = "2"
-# memory_limit         = "4Gi"
-# container_concurrency = 10
-# timeout_seconds      = 300
