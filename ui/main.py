@@ -24,7 +24,7 @@ sessions: Dict[str, Dict[str, Any]] = {}
 
 
 def run_funsearch_process(formula: str, params: str, data: str, insights: str,
-                          max_nparams: int, max_mutations: int, auto_cleanup: bool, request: gr.Request):
+                          max_nparams: int, max_mutations: int, request: gr.Request, auto_cleanup: bool, slack_checkbox):
     """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
     session_hash = request.session_hash
     if not session_hash:
@@ -44,11 +44,12 @@ def run_funsearch_process(formula: str, params: str, data: str, insights: str,
 
     # Slack通知用の設定
     notifier = None
-    try:
-        notifier = slack.SlackNotifier()
-    except ValueError:
-        # Slack設定が無い場合は通知無しで続行
-        pass
+    if slack_checkbox:
+        try:
+            notifier = slack.SlackNotifier()
+        except ValueError:
+            # Slack設定が無い場合は通知無しで続行
+            pass
 
     start_time = time.time()
 
@@ -192,6 +193,10 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
             auto_cleanup_checkbox = gr.Checkbox(
                 label="ページ離脱時に自動停止", value=True,
                 info="チェックを外すと、ページを離脱してもバックグラウンドで実行が継続されます。")
+            slack_checkbox = gr.Checkbox(
+                label="Slack通知", value=True,
+                info="実行完了時にSlackに結果を通知します。"
+            )
 
             with gr.Row():
                 run_button = gr.Button("実行", variant="primary")
@@ -205,7 +210,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
     run_event = run_button.click(
         fn=run_funsearch_process,
         inputs=[formula_input, params_input, data_input,
-                insights_input, max_nparams_input, max_mutations_input, auto_cleanup_checkbox],
+                insights_input, max_nparams_input, max_mutations_input, auto_cleanup_checkbox, slack_checkbox],
         outputs=[log_output, update_output],
         show_progress="full",
         concurrency_limit=2

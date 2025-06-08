@@ -92,33 +92,35 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
 
         if notifier and top_functions:
             try:
-                end_time = time.time()
                 if start_time:
                     start_str = time.strftime(
                         '%Y-%m-%d %H:%M:%S', time.localtime(start_time))
                     end_str = time.strftime(
-                        '%Y-%m-%d %H:%M:%S', time.localtime(end_time))
+                        '%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
                 else:
                     start_str = end_str = "Unknown"
 
-                message = f"""🔬 FunSearch Completed
+                header_message = f"""🔬 FunSearch Completed
 
-📊 **Execution Summary:**
-• Formula: {formula}
-• Parameters: {specs}
+📊 *Execution Summary:*
 • Max Parameters: {max_nparams}
 • Max Mutations: {max_mutations}
 • Start Time: {start_str}
 • End Time: {end_str}
 
-💡 **Insights:**
+🧪 *Formula Text:*
+{formula}
+
+💡 *Insights:*
 {insights}
 
-🏆 **Top Functions Found ({len(top_functions)}):**
+📝 *Variables:*
+{specs}
 
-{chr(10).join(top_functions)}"""
+🏆 *Top Functions Found ({len(top_functions)}):*"""
 
-                success = notifier.send_message(message)
+                messages = [header_message] + top_functions
+                success = notifier.send_message(messages)
                 q.put(('log', f"✅ Slack notification sent: {success}\n"))
             except Exception as e:
                 q.put(('log', f"❌ Slack notification error: {e}\n"))

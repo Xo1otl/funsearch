@@ -1,6 +1,7 @@
 import os
 import json
 import urllib.request
+from typing import List
 from funsearch import presenter
 
 try:
@@ -13,17 +14,27 @@ except KeyError:
 class SlackNotifier(presenter.ResultNotifier):
     """Slack通知を送信するクラス"""
     
-    def send_message(self, message: str) -> bool:
+    def send_message(self, message: List[str]) -> bool:
         """
-        Webhook経由でSlackにメッセージを送信
+        Webhook経由でSlackにメッセージをブロック形式で送信
         
         Args:
-            message: 送信するメッセージ
+            message: 送信するメッセージのリスト
             
         Returns:
             送信成功時True、失敗時False
         """
-        payload = {"text": message}
+        blocks = []
+        for msg in message:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": msg
+                }
+            })
+        
+        payload = {"blocks": blocks}
         
         try:
             data = json.dumps(payload).encode('utf-8')
