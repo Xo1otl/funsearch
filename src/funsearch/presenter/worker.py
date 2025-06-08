@@ -1,0 +1,125 @@
+import queue
+import traceback
+import time
+from typing import Dict, Any, Optional
+import numpy as np
+from funsearch import llmsr, datadriven
+from . import CancellableInputConverter, SessionQueueProfiler
+from .domain import ResultNotifier
+
+
+def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
+                     inputs: np.ndarray, outputs: np.ndarray, max_nparams: int,
+                     max_mutations: int, session_data: Dict[str, Any], gemini_client,
+                     notifier: Optional[ResultNotifier] = None, start_time: Optional[float] = None):
+    evolver = None
+    top_functions = []  # Slack通知用に関数を収集
+    
+    try:
+        if session_data.get('cancelled', False):
+            q.put(('log', "--- Process cancelled before starting. ---\n"))
+            return
+
+        q.put(('log', "--- Starting FunSearch Worker ---\n"))
+
+        converter = CancellableInputConverter(
+            gemini_client, session_data)
+        q.put(('log', "2. Calling LLM to convert input...\n"))
+
+        info = converter.convert(formula, specs, insights)
+
+        if not info or not info.get("equation_src"):
+            q.put(('log', "| Error | InputConverter failed or returned empty source.\n"))
+            return
+
+        if session_data.get('cancelled', False):
+            q.put(('log', "--- Process cancelled after conversion. ---\n"))
+            return
+
+        q.put(
+            ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
+
+        # 通知用に関数を収集するためのカスタムプロファイラ
+        class NotificationProfiler(SessionQueueProfiler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                
+            def profile(self, event):
+                super().profile(event)
+                # update メッセージが生成された時にキャプチャ
+                if event.type == "on_best_island_improved":
+                    best_fn = event.payload.best_fn()
+                    score = self._get_score(best_fn)
+                    code = self._format_function(best_fn)
+                    top_functions.append(f"**Score: {score}**\n```python\n{code}\n```")
+                    # 最新10件のみ保持
+                    if len(top_functions) > 10:
+                        top_functions.pop(0)
+
+        profiler = NotificationProfiler(q, max_mutations, session_data)
+
+        datasets = [datadriven.Dataset(max_nparams, inputs, outputs)]
+        q.put(('log', "3. Starting FunSearch evolver...\n"))
+        q.put(('log', "=" * 70 + "\n"))
+
+        evolver_config = llmsr.EvolverConfigForMCP(
+            equation_src=info["equation_src"], docstring=info["docstring"],
+            evaluation_inputs=datasets, evaluator=datadriven.dataset_evaluator,
+            prompt_comment=info["prompt_comment"], profiler_fn=profiler.profile,
+            max_nparams=max_nparams
+        )
+        evolver = llmsr.spawn_evolver_for_mcp(evolver_config)
+
+        session_data['evolver'] = evolver
+
+        if session_data.get('cancelled', False):
+            q.put(('log', "--- Process cancelled before evolver start. ---\n"))
+            return
+
+        q.put(('log', "--- Evolver starting evolution process. ---\n"))
+        evolver.start()
+        q.put(('log', "\n" + "=" * 70 + "\n"))
+        q.put(('log', "4. FunSearch evolver finished.\n"))
+
+    except InterruptedError as e:
+        q.put(('log', f"--- Process interrupted: {e} ---\n"))
+    except Exception as e:
+        q.put(('log', f"| Error (Worker) | {e}\n{traceback.format_exc()}\n"))
+    finally:
+        if 'evolver' in session_data:
+            session_data['evolver'] = None
+        
+        # Slack通知送信（バックグラウンドで実行）
+        if notifier and top_functions:
+            try:
+                end_time = time.time()
+                if start_time:
+                    duration = end_time - start_time
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    duration_str = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+                else:
+                    duration_str = "Unknown"
+                
+                message = f"""🔬 FunSearch Completed
+
+📊 **Execution Summary:**
+• Formula: {formula}
+• Parameters: {specs}
+• Max Parameters: {max_nparams}
+• Max Mutations: {max_mutations}
+• Duration: {duration_str}
+
+💡 **Insights:**
+{insights}
+
+🏆 **Top Functions Found ({len(top_functions)}):**
+
+{chr(10).join(top_functions)}"""
+                
+                success = notifier.send_message(message)
+                q.put(('log', f"✅ Slack notification sent: {success}\n"))
+            except Exception as e:
+                q.put(('log', f"❌ Slack notification error: {e}\n"))
+        
+        q.put(('end', None))
