@@ -13,8 +13,8 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
                      max_mutations: int, session_data: Dict[str, Any], gemini_client,
                      notifier: Optional[ResultNotifier] = None, start_time: Optional[float] = None):
     evolver = None
-    top_functions = []  # Slack通知用に関数を収集
-    
+    top_functions = []
+
     try:
         if session_data.get('cancelled', False):
             q.put(('log', "--- Process cancelled before starting. ---\n"))
@@ -43,7 +43,7 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
         class NotificationProfiler(SessionQueueProfiler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
-                
+
             def profile(self, event):
                 super().profile(event)
                 # update メッセージが生成された時にキャプチャ
@@ -51,7 +51,8 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
                     best_fn = event.payload.best_fn()
                     score = self._get_score(best_fn)
                     code = self._format_function(best_fn)
-                    top_functions.append(f"**Score: {score}**\n```python\n{code}\n```")
+                    top_functions.append(
+                        f"**Score: {score}**\n```python\n{code}\n```")
                     # 最新10件のみ保持
                     if len(top_functions) > 10:
                         top_functions.pop(0)
@@ -88,19 +89,18 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
     finally:
         if 'evolver' in session_data:
             session_data['evolver'] = None
-        
-        # Slack通知送信（バックグラウンドで実行）
+
         if notifier and top_functions:
             try:
                 end_time = time.time()
                 if start_time:
-                    duration = end_time - start_time
-                    hours, remainder = divmod(duration, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    duration_str = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+                    start_str = time.strftime(
+                        '%Y-%m-%d %H:%M:%S', time.localtime(start_time))
+                    end_str = time.strftime(
+                        '%Y-%m-%d %H:%M:%S', time.localtime(end_time))
                 else:
-                    duration_str = "Unknown"
-                
+                    start_str = end_str = "Unknown"
+
                 message = f"""🔬 FunSearch Completed
 
 📊 **Execution Summary:**
@@ -108,7 +108,8 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
 • Parameters: {specs}
 • Max Parameters: {max_nparams}
 • Max Mutations: {max_mutations}
-• Duration: {duration_str}
+• Start Time: {start_str}
+• End Time: {end_str}
 
 💡 **Insights:**
 {insights}
@@ -116,10 +117,10 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
 🏆 **Top Functions Found ({len(top_functions)}):**
 
 {chr(10).join(top_functions)}"""
-                
+
                 success = notifier.send_message(message)
                 q.put(('log', f"✅ Slack notification sent: {success}\n"))
             except Exception as e:
                 q.put(('log', f"❌ Slack notification error: {e}\n"))
-        
+
         q.put(('end', None))
