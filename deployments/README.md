@@ -46,11 +46,13 @@ gcloud beta run deploy funsearch \
   --image=asia-northeast1-docker.pkg.dev/YOUR_PROJECT_ID/funsearch/funsearch:latest \
   --iap
 
-# ユーザーアクセス権限付与（プロジェクトオーナーが実行）
-gcloud run services add-iam-policy-binding funsearch \
+# IAPアクセス権限付与（プロジェクトオーナーが実行）
+gcloud iap web add-iam-policy-binding \
+  --resource-type=cloud-run \
+  --service=funsearch \
   --region=asia-northeast1 \
-  --member="user:USER_EMAIL@DOMAIN.com" \
-  --role="roles/run.invoker"
+  --member="domain:qunasys.com" \
+  --role="roles/iap.httpsResourceAccessor"
 ```
 
 ## 設定概要

@@ -241,4 +241,4 @@ if __name__ == "__main__":
 
     # auth_creds = (gradio_user, gradio_pass) if gradio_pass else None
     auth_creds = None  # IAP認証を使用するため無効化
-    demo.launch(auth=auth_creds, share=True, server_name="0.0.0.0")
+    demo.launch(auth=auth_creds, server_name="0.0.0.0", server_port=7860)
