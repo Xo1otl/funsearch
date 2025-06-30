@@ -57,7 +57,8 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
         try:
             with open(file_upload.name, 'r', encoding='utf-8') as f:  # type: ignore
                 data = f.read()
-            full_log += f"1. Loaded data from {file_upload.name}.\n"
+            full_log += \
+                f"1. Loaded data from {file_upload.name}.\n"  # type: ignore
         except Exception as e:
             yield f"Error reading file: {e}\n{traceback.format_exc()}\n", UPDATE_HEADER
             return

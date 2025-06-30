@@ -21,3 +21,8 @@ variable "google_cloud_api_key" {
   sensitive   = true
 }
 
+variable "slack_webhook_url" {
+  description = "Slack webhook URL for notifications"
+  type        = string
+  sensitive   = true
+}
