@@ -111,11 +111,17 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
 🧪 *Formula Text:*
 {formula}
 
+🔬 *Theory Explanation:*
+{theory_explanation}
+
+🔢 *Constants Description:*
+{constants_description}
+
+📝 *Variables Description:*
+{variables_description}
+
 💡 *Insights:*
 {insights}
-
-📝 *Variables:*
-{specs}
 
 🏆 *Top Functions Found ({len(top_functions)}):*"""
                 top_functions.reverse()
