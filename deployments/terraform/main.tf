@@ -82,8 +82,8 @@ resource "google_cloud_run_service" "funsearch" {
 resource "google_cloudbuild_trigger" "funsearch" {
   name        = "funsearch-trigger"
   description = "Build and deploy FunSearch on push to main"
-  
-  service_account = "projects/${var.project_id}/serviceAccounts/50086289502-compute@developer.gserviceaccount.com"
+
+  # service_account = "projects/${var.project_id}/serviceAccounts/サービスアカウントないとビルドできない"
 
   github {
     owner = "Xo1otl"
@@ -99,7 +99,7 @@ resource "google_cloudbuild_trigger" "funsearch" {
     options {
       logging = "CLOUD_LOGGING_ONLY"
     }
-    
+
     step {
       name = "gcr.io/cloud-builders/docker"
       args = [

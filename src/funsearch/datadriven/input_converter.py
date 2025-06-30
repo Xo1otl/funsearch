@@ -1,49 +1,14 @@
 from google import genai
-import json
-from typing import Dict, Any, Optional, List
+import re
+from typing import Dict, Any, Optional
 
 
 class InputConverter:
     def __init__(self, client: genai.Client):
         self.models = client.models
-        self.funsearch_input_keys = [
-            "docstring",
-            "equation_src",
-            "prompt_comment"
-        ]
-        self.llm_json_keys = [
-            "python_docstring",
-            "input_variable_names",
-            "prompt_comment_text"
-        ]
-
-    def _get_json_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "python_docstring": {
-                    "type": "string",
-                },
-                "input_variable_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "prompt_comment_text": {
-                    "type": "string",
-                }
-            },
-            "required": [
-                "python_docstring",
-                "input_variable_names",
-                "prompt_comment_text"
-            ]
-        }
 
     def _build_prompt(self, formula_text: str, theory_explanation: str, constants_description: str, variables_description: str, insights_text: str) -> str:
-        prompt = f"""
-You are an expert AI that converts natural language descriptions of mathematical formulas into a specific structured JSON format usable by a code evolution tool called FunSearch.
-
-From the given information, please generate a JSON object with the elements necessary to run FunSearch.
+        prompt = f"""You are an expert AI that converts natural language descriptions of mathematical formulas into a specific structured text format usable by a code evolution tool called FunSearch.
 
 ## Input Information
 
@@ -57,12 +22,12 @@ From the given information, please generate a JSON object with the elements nece
 {theory_explanation}
 ```
 
-### 3. Description of Constants (values that must not change during evolution)
+### 3. Description of Constants (values that must not be changed during evolution)
 ```
 {constants_description}
 ```
 
-### 4. Description of Input Variables (columns from the data)
+### 4. Description of Input Variables
 ```
 {variables_description}
 ```
@@ -74,15 +39,39 @@ From the given information, please generate a JSON object with the elements nece
 
 ## Task
 
-Carefully analyze the input information above and generate a JSON object containing the following information:
-- `input_variable_names`: A list of names for variables from 'Description of Input Variables' that are neither return values nor fixed constants.
-- `python_docstring`: A comprehensive and well-formatted Python docstring for the function FunSearch will evolve. It should follow standard conventions (like Google or NumPy style) and clearly explain the function's purpose, its arguments, and what it returns. Specifically, include:
-    - An 'Args:' section: List each input variable, specify its type (e.g., `np.ndarray`), and provide a clear description of what it represents.
-    - A 'Returns:' section: Describe the return value, specify its type, and explain its meaning in the context of the formula.
-    - A 'Notes:' section: If any constants are described in 'Description of Constants', explicitly state them here and clarify that they are fixed values.
-- `prompt_comment_text`: An instruction comment for FunSearch's LLM. **It must clearly state the original mathematical function (identified from `formula_text`) that serves as the base for evolution.** Following this, it should provide context incorporating the formula explanation, variable descriptions, and any other insights. **Crucially, it must also instruct the LLM to treat the specified constants as fixed values that should not be modified during the evolution process.**
+Carefully analyze the input information and generate a structured text output with the following sections, delimited by the specified tags. Your output must follow this structure exactly:
+[DOCSTRING]
+(Docstring content)
+[/DOCSTRING]
+[PYTHON_CODE]
+(Python code content)
+[/PYTHON_CODE]
+[PROMPT_COMMENT]
+(Prompt comment content)
+[/PROMPT_COMMENT]
 
-Now, start generating the JSON object.
+### Section 1: Docstring
+- **Tag:** `[DOCSTRING]` and `[/DOCSTRING]`
+- **Content:** Generate ONLY the docstring content for the `equation` function, formatted in Google Python Style. The docstring must remain valid after the function's logic has been evolved. **Do not mention the initial formula or its name or quote or code.** The docstring must only explain:
+    - The function's overall purpose.
+    - The arguments (`Args:`), including input variables and the `params` array.
+    - The return value (`Returns:`).
+    - The fixed constants (`Notes:`).
+
+### Section 2: Python Code
+- **Tag:** `[PYTHON_CODE]` and `[/PYTHON_CODE]`
+- **Content:** Write a complete Python function named `equation`.
+    - The initial function signature must accept the input variables (e.g., `x: np.ndarray`) and an additional `params: np.ndarray` for FunSearch to use.
+    - The initial function body must implement the "Base Theoretical Formula".
+    - The constants from "Description of Constants" should be defined and used within the function.
+
+### Section 3: Prompt Comment
+- **Tag:** `[PROMPT_COMMENT]` and `[/PROMPT_COMMENT]`
+- **Content:** Create an instruction comment for FunSearch's LLM.
+    - It should state the original mathematical function.
+    - It should provide context from the formula explanation, variable descriptions, and other insights.
+
+Now, start generating the structured text output.
 """
         return prompt
 
@@ -91,16 +80,12 @@ Now, start generating the JSON object.
             response = self.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": self._get_json_schema()
-                },
             )
             if hasattr(response, 'text') and response.text:
                 return response.text
             else:
                 raise ValueError(
-                    "Gemini returned no text or an unexpected response structure in JSON mode.")
+                    "Gemini returned no text or an unexpected response structure.")
 
         except Exception as e:
             error_details = ""
@@ -109,107 +94,93 @@ Now, start generating the JSON object.
             elif hasattr(e, 'message'):
                 error_details = e.message  # type: ignore
             print(
-                f"Error during Gemini API call (JSON mode): {e}\nDetails: {error_details}")
+                f"Error during Gemini API call: {e}\nDetails: {error_details}")
             raise
 
-    def _parse_response(self, response_text: str) -> Dict[str, Any]:
+    def _parse_response(self, response_text: str) -> Dict[str, str]:
         try:
-            print(
-                f"Attempting to parse JSON response: {response_text[:500]}...")
-            parsed_json = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Failed to decode JSON response: {e}. Response text: {response_text}")
+            print(f"Attempting to parse response: {response_text[:500]}...")
 
-        results = {}
-        schema_properties = self._get_json_schema()["properties"]
-        required_keys = self._get_json_schema().get("required", [])
+            docstring_match = re.search(
+                r"\[DOCSTRING\](.*?)\[/DOCSTRING\]", response_text, re.DOTALL)
+            python_code_match = re.search(
+                r"\[PYTHON_CODE\](.*?)\[/PYTHON_CODE\]", response_text, re.DOTALL)
+            prompt_comment_match = re.search(
+                r"\[PROMPT_COMMENT\](.*?)\[/PROMPT_COMMENT\]", response_text, re.DOTALL)
 
-        for key, prop_details in schema_properties.items():
-            if key not in parsed_json:
-                if key in required_keys:
-                    raise ValueError(
-                        f"Missing required key '{key}' in JSON response.")
-                continue  # オプショナルなキーはスキップ (今回は全てrequiredなのでここには来ない想定)
-
-            content = parsed_json[key]
-            expected_type_str = prop_details.get("type")
-
-            if expected_type_str == "string" and not isinstance(content, str):
+            if not (docstring_match and python_code_match and prompt_comment_match):
                 raise ValueError(
-                    f"Key '{key}' expected type string, but got {type(content)} ({content}).")
-            elif expected_type_str == "array":
-                if not isinstance(content, list):
-                    raise ValueError(
-                        f"Key '{key}' expected type array, but got {type(content)} ({content}).")
-                # items の型チェック (ここでは string を想定)
-                item_type_str = prop_details.get("items", {}).get("type")
-                if item_type_str == "string":
-                    if not all(isinstance(item, str) for item in content):
-                        raise ValueError(
-                            f"Key '{key}' expected an array of strings, but found other types within the array.")
-                if key == "input_variable_names" and not content:  # 少なくとも1つの入力変数を期待
-                    raise ValueError(
-                        f"Key '{key}' must contain at least one variable name.")
+                    "One or more sections were not found in the LLM response.")
 
-            results[key] = content
-            print(f"   - Extracted '{key}': {str(content)[:100]}...")
+            docstring = docstring_match.group(1).strip()
+            python_code = python_code_match.group(1).strip()
+            prompt_comment = prompt_comment_match.group(1).strip()
 
-        return results
+            # --- Start Cleaning Process ---
 
-    def _construct_equation_src(self, input_variable_names: List[str]) -> str:
-        if not input_variable_names:
+            # General cleaner for markdown code blocks
+            def clean_markdown_code_block(text, language='python'):
+                text = text.strip()
+                if text.startswith(f'```{language}'):
+                    text = text[len(f'```{language}'):].strip()
+                elif text.startswith('```'):
+                    text = text[3:].strip()
+                if text.endswith('```'):
+                    text = text[:-3].strip()
+                return text
+
+            # Clean docstring
+            docstring = clean_markdown_code_block(docstring)
+            if docstring.startswith('"""') and docstring.endswith('"""'):
+                docstring = docstring[3:-3].strip()
+
+            # Clean python_code and extract from 'def'
+            python_code = clean_markdown_code_block(python_code)
+            def_pos = python_code.find('def ')
+            if def_pos != -1:
+                python_code = python_code[def_pos:]
+
+            # Clean prompt_comment
+            prompt_comment = clean_markdown_code_block(
+                prompt_comment, language='')  # language agnostic
+            lines = prompt_comment.splitlines()
+            cleaned_lines = [line.lstrip().lstrip('#').strip()
+                             for line in lines]
+            prompt_comment = '\n'.join(cleaned_lines)
+
+            # --- End Cleaning Process ---
+
+            return {
+                "docstring": docstring,
+                "equation_src": python_code,
+                "prompt_comment": prompt_comment,
+            }
+
+        except (AttributeError, ValueError) as e:
             raise ValueError(
-                "Input variable names list cannot be empty for constructing equation_src.")
-
-        input_vars_signature = ", ".join(
-            [f"{name}: np.ndarray" for name in input_variable_names])
-
-        function_signature_args = f"{input_vars_signature}, params: np.ndarray"
-
-        equation_src = f"""\
-def equation({function_signature_args}) -> np.ndarray:
-    return {input_variable_names[0]}  # Placeholder implementation
-"""
-        return equation_src
+                f"Failed to parse LLM response: {e}. Response text: {response_text}")
 
     def convert(self, formula_text: str, theory_explanation: str, constants_description: str, variables_description: str, insights_text: str) -> Optional[Dict[str, Any]]:
         """
         変換プロセス全体を実行します。
         """
         try:
-            print(
-                "--- Starting conversion process (Structured Output, Multiple Inputs Approach) ---")
+            print("--- Starting conversion process (Text Parsing Approach) ---")
             print(f"Formula Text (snippet): {formula_text[:100]}...")
-            print(f"Params Text (snippet): {variables_description[:100]}...")
+            print(
+                f"Variables Text (snippet): {variables_description[:100]}...")
             print(f"Insights Text (snippet): {insights_text[:100]}...")
 
             prompt = self._build_prompt(
                 formula_text, theory_explanation, constants_description, variables_description, insights_text)
-            print(f"Generated Prompt:\n{prompt}")
+            # print(f"Generated Prompt:\n{prompt}") # Too long, disable for now
 
-            raw_json_response = self._send_request(prompt)
-            print(f"Received Raw JSON Response:\n{raw_json_response}")
+            raw_response = self._send_request(prompt)
+            print(f"Received Raw Response:\n{raw_response}")
 
-            parsed_data_from_llm = self._parse_response(raw_json_response)
+            final_results = self._parse_response(raw_response)
 
-            equation_src = self._construct_equation_src(
-                parsed_data_from_llm["input_variable_names"]
-            )
-            print(f"Constructed equation_src:\n{equation_src}")
-
-            if '"""' in parsed_data_from_llm["python_docstring"]:
-                str.replace(
-                    parsed_data_from_llm["python_docstring"], '"""', '')
-
-            final_results = {
-                "docstring": parsed_data_from_llm["python_docstring"],
-                "equation_src": equation_src,
-                "prompt_comment": parsed_data_from_llm["prompt_comment_text"],
-            }
-
-            print(
-                "--- Conversion successful (Structured Output, Multiple Inputs Approach) ---")
+            print("--- Conversion successful (Text Parsing Approach) ---")
             return final_results
         except Exception as e:
             print(f"An error occurred during the conversion process: {e}")
