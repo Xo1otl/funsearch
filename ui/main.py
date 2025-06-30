@@ -55,7 +55,7 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
 
     if file_upload is not None:
         try:
-            with open(file_upload.name, 'r', encoding='utf-8') as f:
+            with open(file_upload.name, 'r', encoding='utf-8') as f:  # type: ignore
                 data = f.read()
             full_log += f"1. Loaded data from {file_upload.name}.\n"
         except Exception as e:

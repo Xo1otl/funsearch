@@ -47,11 +47,11 @@ resource "google_cloud_run_service" "funsearch" {
         "run.googleapis.com/ingress" = "all"
       }
     }
-    
+
     spec {
       containers {
         image = "${var.region}-docker.pkg.dev/${var.project_id}/funsearch/funsearch:latest"
-        
+
         ports {
           container_port = 7860
         }
@@ -100,7 +100,7 @@ resource "google_cloudbuild_trigger" "funsearch" {
         "."
       ]
     }
-    
+
     step {
       name = "gcr.io/cloud-builders/docker"
       args = [
@@ -111,7 +111,7 @@ resource "google_cloudbuild_trigger" "funsearch" {
     }
 
     step {
-      name = "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+      name       = "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
       entrypoint = "gcloud"
       args = [
         "run", "services", "update", var.service_name,
