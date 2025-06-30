@@ -6,6 +6,7 @@ import numpy as np
 from funsearch import llmsr, datadriven
 from . import CancellableInputConverter, SessionQueueProfiler
 from .domain import ResultNotifier
+from funsearch.function.py_ast_skeleton import PyAstSkeleton
 
 
 def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, constants_description: str, variables_description: str, insights: str,
@@ -26,7 +27,8 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
             gemini_client, session_data)
         q.put(('log', "2. Calling LLM to convert input...\n"))
 
-        info = converter.convert(formula, theory_explanation, constants_description, variables_description, insights)
+        info = converter.convert(
+            formula, theory_explanation, constants_description, variables_description, insights)
 
         if not info or not info.get("equation_src"):
             q.put(('log', "| Error | InputConverter failed or returned empty source.\n"))
@@ -39,6 +41,23 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
         q.put(
             ('log', f"--- Generated Code ---\n{info['equation_src']}\n---\n"))
 
+        # 初期Skeletonを保存
+        try:
+            initial_skeleton = PyAstSkeleton(info["equation_src"])
+
+            initial_skeleton_info = {
+                'index': 0,
+                'skeleton': initial_skeleton,
+                'score': 'Initial',
+                'code': info["equation_src"],
+                'description': f"Initial Function (Generated)"
+            }
+            session_data['skeletons'].append(initial_skeleton_info)
+            q.put(('log', f"--- Added initial function to session data ---\n"))
+        except Exception as e:
+            q.put(
+                ('log', f"--- Warning: Could not save initial function: {e} ---\n"))
+
         # 通知用に関数を収集するためのカスタムプロファイラ
         class NotificationProfiler(SessionQueueProfiler):
             def __init__(self, *args, **kwargs):
@@ -46,16 +65,32 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
 
             def profile(self, event):
                 super().profile(event)
-                # update メッセージが生成された時にキャプチャ
                 if event.type == "on_best_island_improved":
-                    best_fn = event.payload.best_fn()
-                    score = self._get_score(best_fn)
-                    code = self._format_function(best_fn)
-                    top_functions.append(
-                        f"**Score: {score}**\n```python\n{code}\n```")
-                    # 最新10件のみ保持
-                    if len(top_functions) > 10:
-                        top_functions.pop(0)
+                    try:
+                        best_fn = event.payload.best_fn()
+                        score = self._get_score(best_fn)
+                        code = self._format_function(best_fn)
+                        skeleton = best_fn.skeleton()
+
+                        if 'skeletons' not in session_data:
+                            session_data['skeletons'] = []
+
+                        skeleton_info = {
+                            'index': len(session_data['skeletons']),
+                            'skeleton': skeleton,
+                            'score': score,
+                            'code': code,
+                            'description': f"Evolved Function {len(session_data['skeletons'])} (Score: {score})"
+                        }
+                        session_data['skeletons'].append(skeleton_info)
+
+                        top_functions.append(
+                            f"**Score: {score}**\n```python\n{code}\n```")
+                        if len(top_functions) > 10:
+                            top_functions.pop(0)
+
+                    except Exception:
+                        pass
 
         profiler = NotificationProfiler(q, max_mutations, session_data)
 

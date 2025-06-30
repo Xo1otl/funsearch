@@ -6,7 +6,9 @@ import queue
 from typing import Dict, Any, List
 import numpy as np
 import traceback
-from funsearch import function, archipelago, cluster, presenter, slack
+import matplotlib.pyplot as plt
+from funsearch import function, archipelago, cluster, presenter, slack, datadriven
+from funsearch.presenter.plot_component import OneDimensionalPlotComponent
 from google import genai
 
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
@@ -35,7 +37,8 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
         'cancelled': False,
         'evolver': None,
         'worker_thread': None,
-        'auto_cleanup': auto_cleanup
+        'auto_cleanup': auto_cleanup,
+        'skeletons': []
     }
 
     q = queue.Queue()
@@ -110,8 +113,25 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
 
     full_log += "--- FunSearch process completed. ---\n"
 
+    # プロット用データを保存
     if session_hash in sessions:
-        del sessions[session_hash]
+        session_data = sessions[session_hash]
+        if 'skeletons' in session_data and session_data['skeletons']:
+            try:
+                dataset = datadriven.Dataset(max_nparams, inputs_np, outputs_np)
+                plot_component = OneDimensionalPlotComponent(dataset)
+                
+                for skeleton_info in session_data['skeletons']:
+                    plot_component.add_skeleton(
+                        skeleton_info['index'],
+                        skeleton_info['skeleton'],
+                        skeleton_info['description']
+                    )
+                
+                session_data['plot_component'] = plot_component
+                full_log += f"--- Plot data saved. {len(session_data['skeletons'])} functions available for visualization. ---\n"
+            except Exception as e:
+                full_log += f"--- Error saving plot data: {e} ---\n"
 
     yield full_log, UPDATE_HEADER + "".join(update_list)
 
@@ -157,6 +177,53 @@ def cleanup_session(request: gr.Request):
     if evolver is not None:
         evolver.stop()
         session_data['evolver'] = None
+    
+    # セッションデータを削除
+    del sessions[session_hash]
+
+
+# 可視化用の関数群
+def get_plot_component(request: gr.Request):
+    """セッションからplot_componentを取得"""
+    session_hash = request.session_hash
+    if not session_hash or session_hash not in sessions:
+        return None
+    session_data = sessions[session_hash]
+    return session_data.get('plot_component')
+
+
+def get_available_functions(request: gr.Request):
+    """現在のセッションの関数リストを返す"""
+    plot_component = get_plot_component(request)
+    if not plot_component:
+        return gr.CheckboxGroup(choices=[], label="関数選択", info="実行完了後に関数が表示されます")
+    
+    functions = plot_component.get_available_skeletons()
+    choices = [(f"{desc}", idx) for idx, desc, score in functions]
+    return gr.CheckboxGroup(choices=choices, label="関数選択")
+
+
+def create_empty_plot(message):
+    """空のプロットを作成"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.text(0.5, 0.5, message, ha='center', va='center', transform=ax.transAxes)
+    return fig
+
+
+def create_plot(selected_functions, request: gr.Request):
+    """選択された関数でプロットを作成"""
+    if not selected_functions:
+        return create_empty_plot('関数を選択してください')
+    
+    plot_component = get_plot_component(request)
+    if not plot_component:
+        return create_empty_plot('実行完了後にプロットが利用可能になります')
+    
+    plot_component.select_skeletons(selected_functions)
+    plot_data = plot_component.create_plot_data()
+    
+    from funsearch.presenter.plot_component import create_matplotlib_plot
+    return create_matplotlib_plot(plot_data)
 
 
 default_formula = r'E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)'
@@ -179,44 +246,60 @@ default_max_mutations = 50
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
     gr.Markdown("# FunSearch Gradio Interface (With Enhanced Stop Button)")
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            formula_input = gr.Textbox(
-                lines=2, label="理論式", value=default_formula, info="進化の出発点となる数式を入力します。")
-            theory_explanation_input = gr.Textbox(
-                lines=3, label="理論式の説明", value=default_theory_explanation, info="数式の背景や目的を説明します。")
-            constants_description_input = gr.Textbox(
-                lines=3, label="定数の説明", value=default_constants_description, info="進化の過程で変更してはならない定数とその値を記述します。")
-            variables_description_input = gr.Textbox(
-                lines=2, label="説明変数の説明", value=default_variables_description, info="データCSVの入力列（目的変数の列を除く）に対応する変数を説明します。")
-            data_input = gr.Textbox(
-                lines=5, label="データ (CSV)", value=default_data, info="ファイルアップロード機能を使用する場合、これらのデータは無視されます。")
-            file_upload = gr.File(
-                label="またはCSVファイルをアップロード", file_types=[".csv"])
-            insights_input = gr.Textbox(
-                lines=3, label="着眼点", value=default_insights, info="進化の方向性をガイドするための追加のヒントや制約を記述します。")
-            max_nparams_input = gr.Number(
-                label="最大パラメータ数", value=default_nparams, precision=0, step=1,
-                info="進化の過程で追加できる最大のパラメータ数を指定します。")
-            max_mutations_input = gr.Number(
-                label="変異回数", value=default_max_mutations, precision=0, step=1,
-                info="回数に達するまで停止しないので必ず適切な値を設定してください。")
-            auto_cleanup_checkbox = gr.Checkbox(
-                label="ページ離脱時に自動停止", value=True,
-                info="チェックを外すと、ページを離脱してもバックグラウンドで実行が継続されます。")
-            slack_checkbox = gr.Checkbox(
-                label="Slack通知", value=True,
-                info="実行完了時にSlackに結果を通知します。"
-            )
-
+    with gr.Tabs():
+        with gr.TabItem("実行"):
             with gr.Row():
-                run_button = gr.Button("実行", variant="primary")
-                stop_button = gr.Button("停止", variant="stop")
+                with gr.Column(scale=1):
+                    formula_input = gr.Textbox(
+                        lines=2, label="理論式", value=default_formula, info="進化の出発点となる数式を入力します。")
+                    theory_explanation_input = gr.Textbox(
+                        lines=3, label="理論式の説明", value=default_theory_explanation, info="数式の背景や目的を説明します。")
+                    constants_description_input = gr.Textbox(
+                        lines=3, label="定数の説明", value=default_constants_description, info="進化の過程で変更してはならない定数とその値を記述します。")
+                    variables_description_input = gr.Textbox(
+                        lines=2, label="説明変数の説明", value=default_variables_description, info="データCSVの入力列（目的変数の列を除く）に対応する変数を説明します。")
+                    data_input = gr.Textbox(
+                        lines=5, label="データ (CSV)", value=default_data, info="ファイルアップロード機能を使用する場合、これらのデータは無視されます。")
+                    file_upload = gr.File(
+                        label="またはCSVファイルをアップロード", file_types=[".csv"])
+                    insights_input = gr.Textbox(
+                        lines=3, label="着眼点", value=default_insights, info="進化の方向性をガイドするための追加のヒントや制約を記述します。")
+                    max_nparams_input = gr.Number(
+                        label="最大パラメータ数", value=default_nparams, precision=0, step=1,
+                        info="進化の過程で追加できる最大のパラメータ数を指定します。")
+                    max_mutations_input = gr.Number(
+                        label="変異回数", value=default_max_mutations, precision=0, step=1,
+                        info="回数に達するまで停止しないので必ず適切な値を設定してください。")
+                    auto_cleanup_checkbox = gr.Checkbox(
+                        label="ページ離脱時に自動停止", value=True,
+                        info="チェックを外すと、ページを離脱してもバックグラウンドで実行が継続されます。")
+                    slack_checkbox = gr.Checkbox(
+                        label="Slack通知", value=True,
+                        info="実行完了時にSlackに結果を通知します。"
+                    )
 
-        with gr.Column(scale=2):
-            log_output = gr.Textbox(
-                label="実行ログ", lines=25, autoscroll=True, show_copy_button=True)
-            update_output = gr.Markdown(label="更新ログ (Best Functions)")
+                    with gr.Row():
+                        run_button = gr.Button("実行", variant="primary")
+                        stop_button = gr.Button("停止", variant="stop")
+
+                with gr.Column(scale=2):
+                    log_output = gr.Textbox(
+                        label="実行ログ", lines=25, autoscroll=True, show_copy_button=True)
+                    update_output = gr.Markdown(label="更新ログ (Best Functions)")
+
+        with gr.TabItem("可視化"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    refresh_functions_btn = gr.Button("関数リスト更新", variant="secondary")
+                    function_selection = gr.CheckboxGroup(
+                        choices=[], label="関数選択", info="実行完了後に関数が表示されます")
+                    
+                    with gr.Column(visible=False) as param_controls:
+                        gr.Markdown("### パラメータ調整")
+                        param_sliders = gr.Column()
+                
+                with gr.Column(scale=2):
+                    plot_output = gr.Plot(label="関数比較プロット")
 
     run_event = run_button.click(
         fn=run_funsearch_process,
@@ -230,6 +313,18 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
     stop_button.click(
         fn=stop_funsearch_process,
         inputs=None,
+    )
+
+    # 可視化タブのイベント
+    refresh_functions_btn.click(
+        fn=get_available_functions,
+        outputs=function_selection
+    )
+    
+    function_selection.select(
+        fn=create_plot,
+        inputs=[function_selection],
+        outputs=plot_output
     )
 
     demo.unload(

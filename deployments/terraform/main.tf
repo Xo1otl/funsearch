@@ -83,7 +83,7 @@ resource "google_cloudbuild_trigger" "funsearch" {
   name        = "funsearch-trigger"
   description = "Build and deploy FunSearch on push to main"
 
-  # service_account = "projects/${var.project_id}/serviceAccounts/サービスアカウントないとビルドできない"
+  service_account = "projects/${var.project_id}/serviceAccounts/funsearch-build@qunasys-ai-dev.iam.gserviceaccount.com"
 
   github {
     owner = "Xo1otl"
