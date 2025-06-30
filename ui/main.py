@@ -61,9 +61,6 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
         except Exception as e:
             yield f"Error reading file: {e}\n{traceback.format_exc()}\n", UPDATE_HEADER
             return
-    elif not data:
-        yield "Error: Please provide Data or upload a CSV file.\n", UPDATE_HEADER
-        return
 
     try:
         lines = [list(map(float, line.split(',')))
