@@ -8,7 +8,7 @@ from . import CancellableInputConverter, SessionQueueProfiler
 from .domain import ResultNotifier
 
 
-def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
+def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, constants_description: str, variables_description: str, insights: str,
                      inputs: np.ndarray, outputs: np.ndarray, max_nparams: int,
                      max_mutations: int, session_data: Dict[str, Any], gemini_client,
                      notifier: Optional[ResultNotifier] = None, start_time: Optional[float] = None):
@@ -26,7 +26,7 @@ def funsearch_worker(q: queue.Queue, formula: str, specs: str, insights: str,
             gemini_client, session_data)
         q.put(('log', "2. Calling LLM to convert input...\n"))
 
-        info = converter.convert(formula, specs, insights)
+        info = converter.convert(formula, theory_explanation, constants_description, variables_description, insights)
 
         if not info or not info.get("equation_src"):
             q.put(('log', "| Error | InputConverter failed or returned empty source.\n"))

@@ -23,7 +23,7 @@ UPDATE_HEADER = "## Best Functions Found:\n\n"
 sessions: Dict[str, Dict[str, Any]] = {}
 
 
-def run_funsearch_process(formula: str, params: str, data: str, insights: str,
+def run_funsearch_process(formula: str, theory_explanation: str, constants_description: str, variables_description: str, data: str, file_upload: gr.File, insights: str,
                           max_nparams: int, max_mutations: int, request: gr.Request, auto_cleanup: bool, slack_checkbox):
     """Gradio から呼び出され、FunSearch を実行し、結果を yield する。"""
     session_hash = request.session_hash
@@ -53,8 +53,16 @@ def run_funsearch_process(formula: str, params: str, data: str, insights: str,
 
     start_time = time.time()
 
-    if not all([formula, params, data]):
-        yield "Error: Please provide Formula, Parameters, and Data.\n", UPDATE_HEADER
+    if file_upload is not None:
+        try:
+            with open(file_upload.name, 'r', encoding='utf-8') as f:
+                data = f.read()
+            full_log += f"1. Loaded data from {file_upload.name}.\n"
+        except Exception as e:
+            yield f"Error reading file: {e}\n{traceback.format_exc()}\n", UPDATE_HEADER
+            return
+    elif not data:
+        yield "Error: Please provide Data or upload a CSV file.\n", UPDATE_HEADER
         return
 
     try:
@@ -73,7 +81,7 @@ def run_funsearch_process(formula: str, params: str, data: str, insights: str,
 
     worker_thread = threading.Thread(
         target=presenter.funsearch_worker,
-        args=(q, formula, params, insights, inputs_np,
+        args=(q, formula, theory_explanation, constants_description, variables_description, insights, inputs_np,
               outputs_np, max_nparams, max_mutations, sessions[session_hash], GEMINI_CLIENT_FOR_CONVERTER, notifier, start_time),
         daemon=True
     )
@@ -153,20 +161,19 @@ def cleanup_session(request: gr.Request):
         session_data['evolver'] = None
 
 
-default_formula = r'''このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
-特に、充填材の体積分率（phi）と複合材料の引張弾性率（E_composite）の関係をモデル化します。
-基礎となる物理モデルは、複合材料の弾性率を定義するReussモデルです。
-Reussモデルは以下の式で表されます。
-
-E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)
-
-ここで、E_mはマトリックスの引張弾性率であり、4.84で固定されています。
-E_fは充填材の引張弾性率であり、117.64で固定されています。'''
-default_params = r'\phi: フィラー体積分率'
-default_data = '0,4.84\n0.09,5.56\n0.17,6.13\n0.33,10.13\n0.44,14.96'
-default_insights = '''あなたのタスクは与えられた変数（phi, E_m, E_f）を用いて、複合材料の引張弾性率 E_composite を予測する関数 E_composite = f(phi, params, E_m, E_f) を進化させることです。
-進化の出発点は提供されたReussモデルです。
-最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、自由に改良を重ねて、実験データとの適合性を向上させることを目指してください。
+default_formula = r'E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)'
+default_theory_explanation = r'''このモデルは、粒子で充填されたゴム複合材料の引張弾性率を予測することを目的としています。
+基礎となる物理モデルは、複合材料の弾性率を定義するReussモデルです。'''
+default_constants_description = r'''E_m: マトリックスの引張弾性率 (4.84で固定)
+E_f: 充填材の引張弾性率 (117.64で固定)'''
+default_variables_description = r'phi: フィラー体積分率 (実験データCSVの入力列)'
+default_data = r'''0,4.84
+0.09,5.56
+0.17,6.13
+0.33,10.13
+0.44,14.96'''
+default_insights = r'''進化の出発点は提供されたReussモデルです。
+最大で MAX_NPARAMS 個の最適化可能なパラメータ（params 配列から）を導入して、Reussモデルを修正または拡張し、実験データとの適合性を向上させることを目指してください。
 最終的な目標は、基本的なReussモデルに対して、物理的に意味のある改善を見つけ出すことです。'''
 default_nparams = 1
 default_max_mutations = 50
@@ -177,13 +184,19 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
     with gr.Row():
         with gr.Column(scale=1):
             formula_input = gr.Textbox(
-                lines=5, label="理論式", value=default_formula)
-            params_input = gr.Textbox(
-                lines=2, label="パラメータ説明", value=default_params)
+                lines=2, label="理論式", value=default_formula, info="進化の出発点となる数式を入力します。")
+            theory_explanation_input = gr.Textbox(
+                lines=3, label="理論式の説明", value=default_theory_explanation, info="数式の背景や目的を説明します。")
+            constants_description_input = gr.Textbox(
+                lines=3, label="定数の説明", value=default_constants_description, info="進化の過程で変更してはならない定数とその値を記述します。")
+            variables_description_input = gr.Textbox(
+                lines=2, label="説明変数の説明", value=default_variables_description, info="データCSVの入力列（目的変数の列を除く）に対応する変数を説明します。")
             data_input = gr.Textbox(
-                lines=5, label="データ (CSV)", value=default_data)
+                lines=5, label="データ (CSV)", value=default_data, info="ファイルアップロード機能を使用する場合、これらのデータは無視されます。")
+            file_upload = gr.File(
+                label="またはCSVファイルをアップロード", file_types=[".csv"])
             insights_input = gr.Textbox(
-                lines=3, label="着眼点", value=default_insights)
+                lines=3, label="着眼点", value=default_insights, info="進化の方向性をガイドするための追加のヒントや制約を記述します。")
             max_nparams_input = gr.Number(
                 label="最大パラメータ数", value=default_nparams, precision=0, step=1,
                 info="進化の過程で追加できる最大のパラメータ数を指定します。")
@@ -209,7 +222,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
 
     run_event = run_button.click(
         fn=run_funsearch_process,
-        inputs=[formula_input, params_input, data_input,
+        inputs=[formula_input, theory_explanation_input, constants_description_input, variables_description_input, data_input, file_upload,
                 insights_input, max_nparams_input, max_mutations_input, auto_cleanup_checkbox, slack_checkbox],
         outputs=[log_output, update_output],
         show_progress="full",

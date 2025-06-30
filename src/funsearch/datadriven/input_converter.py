@@ -39,25 +39,35 @@ class InputConverter:
             ]
         }
 
-    def _build_prompt(self, formula_text: str, variables_specs: str, insights_text: str) -> str:
+    def _build_prompt(self, formula_text: str, theory_explanation: str, constants_description: str, variables_description: str, insights_text: str) -> str:
         prompt = f"""
 You are an expert AI that converts natural language descriptions of mathematical formulas into a specific structured JSON format usable by a code evolution tool called FunSearch.
 
-From the given information about the theoretical formula, parameters, and points of interest, please generate a JSON object with the elements necessary to run FunSearch.
+From the given information, please generate a JSON object with the elements necessary to run FunSearch.
 
 ## Input Information
 
-### 1. Theoretical Formula Description
+### 1. Base Theoretical Formula
 ```
 {formula_text}
 ```
 
-### 2. Varible Specification
+### 2. Explanation of the Theoretical Formula
 ```
-{variables_specs}
+{theory_explanation}
 ```
 
-### 3. Other Points of Interest
+### 3. Description of Constants (values that must not change during evolution)
+```
+{constants_description}
+```
+
+### 4. Description of Input Variables (columns from the data)
+```
+{variables_description}
+```
+
+### 5. Other Insights for Evolution
 ```
 {insights_text}
 ```
@@ -65,12 +75,12 @@ From the given information about the theoretical formula, parameters, and points
 ## Task
 
 Carefully analyze the input information above and generate a JSON object containing the following information:
-- `input_variable_names`: A list of names for variables from 'Variable Specification' that are neither return values nor fixed constants.
+- `input_variable_names`: A list of names for variables from 'Description of Input Variables' that are neither return values nor fixed constants.
 - `python_docstring`: A comprehensive and well-formatted Python docstring for the function FunSearch will evolve. It should follow standard conventions (like Google or NumPy style) and clearly explain the function's purpose, its arguments, and what it returns. Specifically, include:
-    - An 'Variables:' section: List each input variable, specify its type (e.g., `np.ndarray`), and provide a clear description of what it represents.
+    - An 'Args:' section: List each input variable, specify its type (e.g., `np.ndarray`), and provide a clear description of what it represents.
     - A 'Returns:' section: Describe the return value, specify its type, and explain its meaning in the context of the formula.
-- `prompt_comment_text`: An instruction comment for FunSearch's LLM. **It must clearly the original mathematical function (identified from `formula_text`) that serves as the base for evolution.** Following this, it can provide context incorporating insights and formula description.
-
+    - A 'Notes:' section: If any constants are described in 'Description of Constants', explicitly state them here and clarify that they are fixed values.
+- `prompt_comment_text`: An instruction comment for FunSearch's LLM. **It must clearly state the original mathematical function (identified from `formula_text`) that serves as the base for evolution.** Following this, it should provide context incorporating the formula explanation, variable descriptions, and any other insights. **Crucially, it must also instruct the LLM to treat the specified constants as fixed values that should not be modified during the evolution process.**
 
 Now, start generating the JSON object.
 """
@@ -163,7 +173,7 @@ def equation({function_signature_args}) -> np.ndarray:
 """
         return equation_src
 
-    def convert(self, formula_text: str, variables_specs: str, insights_text: str) -> Optional[Dict[str, Any]]:
+    def convert(self, formula_text: str, theory_explanation: str, constants_description: str, variables_description: str, insights_text: str) -> Optional[Dict[str, Any]]:
         """
         変換プロセス全体を実行します。
         """
@@ -171,11 +181,11 @@ def equation({function_signature_args}) -> np.ndarray:
             print(
                 "--- Starting conversion process (Structured Output, Multiple Inputs Approach) ---")
             print(f"Formula Text (snippet): {formula_text[:100]}...")
-            print(f"Params Text (snippet): {variables_specs[:100]}...")
+            print(f"Params Text (snippet): {variables_description[:100]}...")
             print(f"Insights Text (snippet): {insights_text[:100]}...")
 
             prompt = self._build_prompt(
-                formula_text, variables_specs, insights_text)
+                formula_text, theory_explanation, constants_description, variables_description, insights_text)
             print(f"Generated Prompt:\n{prompt}")
 
             raw_json_response = self._send_request(prompt)
