@@ -48,12 +48,14 @@ class OneDimensionalPlotComponent:
         self.selected_skeletons = [i for i in indices if i in self.skeletons]
     
     def generate_predictions(self, skeleton_info: SkeletonInfo, 
-                           params: Optional[np.ndarray] = None) -> np.ndarray:
+                           params: Optional[np.ndarray] = None, 
+                           x_input: Optional[np.ndarray] = None) -> np.ndarray:
         if params is None:
             params = skeleton_info.optimal_params
-            
-        x_input = self.dataset.inputs.flatten()
         
+        if x_input is None:
+            x_input = self.dataset.inputs.flatten()
+            
         try:
             return skeleton_info.skeleton(x_input, params)
         except Exception as e:
@@ -63,10 +65,17 @@ class OneDimensionalPlotComponent:
     def create_plot_data(self, param_adjustments: Optional[Dict[int, np.ndarray]] = None) -> Dict[str, Any]:
         if param_adjustments is None:
             param_adjustments = {}
+        
+        # Generate high-resolution x values for smooth function curves
+        x_data_original = self.dataset.inputs.flatten()
+        x_min, x_max = x_data_original.min(), x_data_original.max()
+        x_range = x_max - x_min
+        x_smooth = np.linspace(x_min - 0.1 * x_range, x_max + 0.1 * x_range, 1000)
             
         plot_data = {
-            'x_data': self.dataset.inputs.flatten(),
+            'x_data': x_data_original,
             'y_actual': self.dataset.outputs,
+            'x_smooth': x_smooth,
             'functions': []
         }
         
@@ -74,13 +83,17 @@ class OneDimensionalPlotComponent:
             skeleton_info = self.skeletons[idx]
             params = param_adjustments.get(idx, skeleton_info.optimal_params)
             
-            y_pred = self.generate_predictions(skeleton_info, params)
-            if len(y_pred) > 0:
-                mse = np.mean((y_pred - self.dataset.outputs) ** 2)
+            # Generate predictions on original data points for MSE calculation
+            y_pred_original = self.generate_predictions(skeleton_info, params, x_data_original)
+            # Generate smooth curve for visualization
+            y_pred_smooth = self.generate_predictions(skeleton_info, params, x_smooth)
+            
+            if len(y_pred_original) > 0 and len(y_pred_smooth) > 0:
+                mse = np.mean((y_pred_original - self.dataset.outputs) ** 2)
                 plot_data['functions'].append({
                     'index': idx,
                     'description': skeleton_info.description,
-                    'y_pred': y_pred,
+                    'y_pred_smooth': y_pred_smooth,
                     'params': params,
                     'mse': mse,
                     'original_mse': skeleton_info.mse
@@ -103,6 +116,7 @@ def create_matplotlib_plot(plot_data: Dict[str, Any]) -> plt.Figure:
     
     x_data = plot_data['x_data']
     y_actual = plot_data['y_actual']
+    x_smooth = plot_data['x_smooth']
     
     ax.scatter(x_data, y_actual, color='black', s=50, alpha=0.7, label='Actual Data', zorder=5)
     
@@ -113,7 +127,7 @@ def create_matplotlib_plot(plot_data: Dict[str, Any]) -> plt.Figure:
         mse_text = f"MSE: {func_data['mse']:.4f}"
         label = f"{func_data['description']} ({mse_text})"
         
-        ax.plot(x_data, func_data['y_pred'], color=color, linewidth=2, 
+        ax.plot(x_smooth, func_data['y_pred_smooth'], color=color, linewidth=2, 
                 label=label, alpha=0.8)
     
     ax.set_xlabel('Input')
