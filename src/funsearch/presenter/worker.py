@@ -53,6 +53,20 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
                 'description': f"Initial Function (Generated)"
             }
             session_data['skeletons'].append(initial_skeleton_info)
+            
+            # plot_componentにも初期関数を追加
+            if 'plot_component' in session_data:
+                try:
+                    plot_component = session_data['plot_component']
+                    plot_component.add_skeleton(
+                        0,
+                        initial_skeleton,
+                        initial_skeleton_info['description']
+                    )
+                    q.put(('log', f"--- Added initial function to plot_component ---\n"))
+                except Exception as e:
+                    q.put(('log', f"--- Warning: Could not add initial function to plot_component: {e} ---\n"))
+            
             q.put(('log', f"--- Added initial function to session data ---\n"))
         except Exception as e:
             q.put(
@@ -83,6 +97,18 @@ def funsearch_worker(q: queue.Queue, formula: str, theory_explanation: str, cons
                             'description': f"Evolved Function {len(session_data['skeletons'])} (Score: {score})"
                         }
                         session_data['skeletons'].append(skeleton_info)
+                        
+                        # plot_componentにも追加
+                        if 'plot_component' in session_data:
+                            try:
+                                plot_component = session_data['plot_component']
+                                plot_component.add_skeleton(
+                                    skeleton_info['index'],
+                                    skeleton,
+                                    skeleton_info['description']
+                                )
+                            except Exception as e:
+                                q.put(('log', f"--- Warning: Could not add to plot_component: {e} ---\n"))
 
                         top_functions.append(
                             f"**Score: {score}**\n```python\n{code}\n```")

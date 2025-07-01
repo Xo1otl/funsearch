@@ -9,6 +9,8 @@ import traceback
 import matplotlib.pyplot as plt
 from funsearch import function, archipelago, cluster, presenter, slack, datadriven
 from funsearch.presenter.plot_component import OneDimensionalPlotComponent
+from funsearch.presenter.display import SessionDisplayManager
+from funsearch.presenter.math_expression_generator import MathExpressionGenerator
 from google import genai
 
 AllEvent = cluster.ClusterEvent | function.FunctionEvent | function.MutationEngineEvent | archipelago.EvolverEvent | archipelago.IslandEvent
@@ -38,7 +40,8 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
         'evolver': None,
         'worker_thread': None,
         'auto_cleanup': auto_cleanup,
-        'skeletons': []
+        'skeletons': [],
+        'display_manager': SessionDisplayManager()
     }
 
     q = queue.Queue()
@@ -78,6 +81,12 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
         yield f"Error parsing data: {e}\n{traceback.format_exc()}\n", UPDATE_HEADER
         return
 
+    # プロット用データを初期化（探索開始時）
+    dataset = datadriven.Dataset(max_nparams, inputs_np, outputs_np)
+    plot_component = OneDimensionalPlotComponent(dataset)
+    sessions[session_hash]['plot_component'] = plot_component
+    full_log += "--- Plot component initialized. ---\n"
+
     yield full_log, UPDATE_HEADER + "".join(update_list)
 
     worker_thread = threading.Thread(
@@ -113,25 +122,12 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
 
     full_log += "--- FunSearch process completed. ---\n"
 
-    # プロット用データを保存
+    # 最終的なプロット状態の確認
     if session_hash in sessions:
         session_data = sessions[session_hash]
-        if 'skeletons' in session_data and session_data['skeletons']:
-            try:
-                dataset = datadriven.Dataset(max_nparams, inputs_np, outputs_np)
-                plot_component = OneDimensionalPlotComponent(dataset)
-                
-                for skeleton_info in session_data['skeletons']:
-                    plot_component.add_skeleton(
-                        skeleton_info['index'],
-                        skeleton_info['skeleton'],
-                        skeleton_info['description']
-                    )
-                
-                session_data['plot_component'] = plot_component
-                full_log += f"--- Plot data saved. {len(session_data['skeletons'])} functions available for visualization. ---\n"
-            except Exception as e:
-                full_log += f"--- Error saving plot data: {e} ---\n"
+        plot_component = session_data.get('plot_component')
+        if plot_component and 'skeletons' in session_data:
+            full_log += f"--- Plot component ready. {len(session_data['skeletons'])} functions available for visualization. ---\n"
 
     yield full_log, UPDATE_HEADER + "".join(update_list)
 
@@ -139,16 +135,7 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
 def stop_funsearch_process(request: gr.Request):
     """FunSearchプロセスを停止"""
     session_hash = request.session_hash
-    if not session_hash:
-        gr.Error("Error: No session hash found.")
-        return
-
-    if session_hash not in sessions:
-        gr.Warning("停止するプロセスが見つかりませんでした。")
-        return
-
-    session_data = sessions[session_hash]
-
+    session_data = sessions[session_hash]  # type: ignore
     session_data['cancelled'] = True
 
     evolver = session_data.get('evolver')
@@ -162,31 +149,121 @@ def stop_funsearch_process(request: gr.Request):
 
 def cleanup_session(request: gr.Request):
     session_hash = request.session_hash
-    if not session_hash or session_hash not in sessions:
+    if session_hash not in sessions:
         return
 
     session_data = sessions[session_hash]
-
-    # auto_cleanupが無効の場合は何もしない
     if not session_data.get('auto_cleanup', True):
         return
 
     session_data['cancelled'] = True
-
     evolver = session_data.get('evolver')
     if evolver is not None:
         evolver.stop()
         session_data['evolver'] = None
-    
-    # セッションデータを削除
+
     del sessions[session_hash]
 
 
 # 可視化用の関数群
+def update_selected_function_display(selected_functions, request: gr.Request):
+    """選択された関数群の表示情報を更新"""
+    if not selected_functions:
+        return "関数を選択してください"
+
+    session_hash = request.session_hash
+    if session_hash not in sessions:
+        return "セッションが見つかりません"
+
+    session_data = sessions[session_hash]
+    display_manager = session_data['display_manager']
+
+    # 選択されたすべての関数の情報を収集
+    selected_skeleton_infos = []
+
+    # まず探索中のskeletonsから探す
+    if 'skeletons' in session_data and session_data['skeletons']:
+        for selected_idx in selected_functions:
+            for skeleton_info in session_data['skeletons']:
+                if skeleton_info['index'] == selected_idx:
+                    selected_skeleton_infos.append(skeleton_info)
+                    break
+
+    # 探索完了後はplot_componentからも取得可能
+    plot_component = get_plot_component(request)
+    if plot_component:
+        for selected_idx in selected_functions:
+            if selected_idx in plot_component.skeletons:
+                # 既に見つかっていない場合のみ追加
+                if not any(info['index'] == selected_idx for info in selected_skeleton_infos):
+                    skeleton_info_obj = plot_component.skeletons[selected_idx]
+                    skeleton_info = {
+                        'index': selected_idx,
+                        'skeleton': skeleton_info_obj.skeleton,
+                        'description': skeleton_info_obj.description,
+                        'score': skeleton_info_obj.score
+                    }
+                    selected_skeleton_infos.append(skeleton_info)
+
+    if selected_skeleton_infos:
+        display_manager.set_selected_functions(selected_skeleton_infos)
+        return display_manager.get_current_markdown()
+
+    return "選択された関数が見つかりません"
+
+
+def generate_math_expression(selected_functions, request: gr.Request):
+    """選択されたすべての関数に対して数式表現を一括生成"""
+    if not selected_functions:
+        return "関数を選択してください"
+
+    session_hash = request.session_hash
+    if session_hash not in sessions:
+        return "セッションが見つかりません"
+
+    session_data = sessions[session_hash]
+    display_manager = session_data['display_manager']
+
+    if not display_manager.has_selected_functions():
+        return "まず関数を選択してください"
+
+    # 数式表現がまだない関数のみを取得
+    functions_needing_math = display_manager.get_functions_needing_math()
+
+    if not functions_needing_math:
+        return display_manager.get_current_markdown()  # 全ての関数に既に数式がある
+
+    # 数式生成が必要な関数の情報を収集
+    skeleton_infos = []
+    for idx in functions_needing_math:
+        if idx in display_manager.all_functions:
+            function_info = display_manager.all_functions[idx]
+            skeleton_infos.append(function_info.skeleton_info)
+
+    if not skeleton_infos:
+        return display_manager.get_current_markdown()
+
+    # 実際のGeneratorで数式表現を生成
+    generator = MathExpressionGenerator(GEMINI_CLIENT_FOR_CONVERTER)
+    skeletons = [info['skeleton'] for info in skeleton_infos]
+    expressions = generator.generate_expressions(skeletons)
+
+    # indexと対応付けて辞書に変換
+    expressions_dict = {}
+    for i, info in enumerate(skeleton_infos):
+        if i < len(expressions):
+            expressions_dict[info['index']] = expressions[i]
+
+    # 一括追加
+    display_manager.add_math_expressions(expressions_dict)
+
+    return display_manager.get_current_markdown()
+
+
 def get_plot_component(request: gr.Request):
     """セッションからplot_componentを取得"""
     session_hash = request.session_hash
-    if not session_hash or session_hash not in sessions:
+    if session_hash not in sessions:
         return None
     session_data = sessions[session_hash]
     return session_data.get('plot_component')
@@ -194,36 +271,56 @@ def get_plot_component(request: gr.Request):
 
 def get_available_functions(request: gr.Request):
     """現在のセッションの関数リストを返す"""
+    session_hash = request.session_hash
+    if session_hash not in sessions:
+        return gr.CheckboxGroup(choices=[], label="関数選択", info="実行開始後に関数が表示されます")
+
+    session_data = sessions[session_hash]
+
+    # 探索中でもskeletonsから関数リストを取得
+    if 'skeletons' in session_data and session_data['skeletons']:
+        choices = [(f"{skeleton_info['description']}", skeleton_info['index'])
+                   for skeleton_info in session_data['skeletons']]
+        return gr.CheckboxGroup(choices=choices, label="関数選択")
+
+    # 探索完了後はplot_componentからも取得可能
     plot_component = get_plot_component(request)
-    if not plot_component:
-        return gr.CheckboxGroup(choices=[], label="関数選択", info="実行完了後に関数が表示されます")
-    
-    functions = plot_component.get_available_skeletons()
-    choices = [(f"{desc}", idx) for idx, desc, score in functions]
-    return gr.CheckboxGroup(choices=choices, label="関数選択")
+    if plot_component:
+        functions = plot_component.get_available_skeletons()
+        choices = [(f"{desc}", idx) for idx, desc, score in functions]
+        return gr.CheckboxGroup(choices=choices, label="関数選択")
+
+    return gr.CheckboxGroup(choices=[], label="関数選択", info="関数が見つかるまでお待ちください")
 
 
 def create_empty_plot(message):
     """空のプロットを作成"""
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.text(0.5, 0.5, message, ha='center', va='center', transform=ax.transAxes)
+    ax.text(0.5, 0.5, message, ha='center',
+            va='center', transform=ax.transAxes)
     return fig
 
 
 def create_plot(selected_functions, request: gr.Request):
     """選択された関数でプロットを作成"""
     if not selected_functions:
-        return create_empty_plot('関数を選択してください')
-    
+        return create_empty_plot('関数を選択してください'), ""
+
+    # 選択された関数の表示情報を更新
+    selected_display = update_selected_function_display(
+        selected_functions, request)
+
     plot_component = get_plot_component(request)
     if not plot_component:
-        return create_empty_plot('実行完了後にプロットが利用可能になります')
-    
+        return create_empty_plot('プロットコンポーネントが初期化されていません'), selected_display
+
     plot_component.select_skeletons(selected_functions)
     plot_data = plot_component.create_plot_data()
-    
+
     from funsearch.presenter.plot_component import create_matplotlib_plot
-    return create_matplotlib_plot(plot_data)
+    plot = create_matplotlib_plot(plot_data)
+
+    return plot, selected_display
 
 
 default_formula = r'E_composite = (E_m * E_f) / ((1 - phi) * E_f + phi * E_m)'
@@ -243,11 +340,12 @@ default_insights = r'''進化の出発点は提供されたReussモデルです�
 default_nparams = 1
 default_max_mutations = 50
 
+
 with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
     gr.Markdown("# FunSearch Gradio Interface (With Enhanced Stop Button)")
 
-    with gr.Tabs():
-        with gr.TabItem("実行"):
+    with gr.Tabs() as tabs:
+        with gr.TabItem("🚀 実行"):
             with gr.Row():
                 with gr.Column(scale=1):
                     formula_input = gr.Textbox(
@@ -285,21 +383,29 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
                 with gr.Column(scale=2):
                     log_output = gr.Textbox(
                         label="実行ログ", lines=25, autoscroll=True, show_copy_button=True)
-                    update_output = gr.Markdown(label="更新ログ (Best Functions)")
+                    update_output = gr.Markdown(
+                        "## Best Functions Found"
+                    )
 
-        with gr.TabItem("可視化"):
+        with gr.TabItem("📊 可視化") as viz_tab:
             with gr.Row():
                 with gr.Column(scale=1):
-                    refresh_functions_btn = gr.Button("関数リスト更新", variant="secondary")
+                    refresh_functions_btn = gr.Button(
+                        "関数リスト更新", variant="secondary")
                     function_selection = gr.CheckboxGroup(
                         choices=[], label="関数選択", info="実行完了後に関数が表示されます")
-                    
-                    with gr.Column(visible=False) as param_controls:
-                        gr.Markdown("### パラメータ調整")
-                        param_sliders = gr.Column()
-                
+                    generate_math_btn = gr.Button(
+                        "数式表現を生成", variant="secondary")
+
                 with gr.Column(scale=2):
                     plot_output = gr.Plot(label="関数比較プロット")
+                    code_output = gr.Markdown(
+                        label="選択された関数の詳細",
+                        latex_delimiters=[
+                            {"left": "$", "right": "$", "display": True},
+                            {"left": "$$", "right": "$$", "display": True}
+                        ]
+                    )
 
     run_event = run_button.click(
         fn=run_funsearch_process,
@@ -320,11 +426,17 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
         fn=get_available_functions,
         outputs=function_selection
     )
-    
+
     function_selection.select(
         fn=create_plot,
         inputs=[function_selection],
-        outputs=plot_output
+        outputs=[plot_output, code_output]
+    )
+
+    generate_math_btn.click(
+        fn=generate_math_expression,
+        inputs=[function_selection],
+        outputs=code_output
     )
 
     demo.unload(
@@ -333,19 +445,5 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
 
 if __name__ == "__main__":
     print("Launching Gradio UI...")
-    # IAP認証を使用するため、Gradio Basic認証は無効化
-    # gradio_user = os.environ.get("GRADIO_USER", "qunasys")
-    # gradio_pass = os.environ.get("GRADIO_PASSWORD")
-    # if not gradio_pass:
-    #     gradio_pass = ''.join(secrets.choice(
-    #         string.ascii_letters + string.digits) for _ in range(16))
-    #     print(
-    #         f"No GRADIO_PASSWORD env var. Using generated password for user '{gradio_user}': {gradio_pass}")
-    # else:
-    #     print(
-    #         f"Using password from GRADIO_PASSWORD env var for user '{gradio_user}'.")
-
-    # auth_creds = (gradio_user, gradio_pass) if gradio_pass else None
-    # ビルドエラー見れるか試す
-    auth_creds = None  # IAP認証を使用するため無効化
+    auth_creds = None
     demo.launch(auth=auth_creds, server_name="0.0.0.0", server_port=7860)
