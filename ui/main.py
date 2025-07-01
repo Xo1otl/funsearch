@@ -346,5 +346,6 @@ if __name__ == "__main__":
     #         f"Using password from GRADIO_PASSWORD env var for user '{gradio_user}'.")
 
     # auth_creds = (gradio_user, gradio_pass) if gradio_pass else None
+    # ビルドエラー見れるか試す
     auth_creds = None  # IAP認証を使用するため無効化
     demo.launch(auth=auth_creds, server_name="0.0.0.0", server_port=7860)

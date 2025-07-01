@@ -96,10 +96,6 @@ resource "google_cloudbuild_trigger" "funsearch" {
   included_files = ["src/**", "ui/**", "Dockerfile", "pyproject.toml"]
 
   build {
-    options {
-      logging = "CLOUD_LOGGING_ONLY"
-    }
-
     step {
       name = "gcr.io/cloud-builders/docker"
       args = [
