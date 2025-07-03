@@ -446,5 +446,4 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:  # type: ignore
 if __name__ == "__main__":
     print("Launching Gradio UI...")
     auth_creds = None
-    # ビルドちゃんと走るか確認
     demo.launch(auth=auth_creds, server_name="0.0.0.0", server_port=7860)
