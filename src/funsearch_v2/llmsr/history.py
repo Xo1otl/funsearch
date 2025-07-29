@@ -1,11 +1,11 @@
-from funsearch_v2 import gas
+from funsearch_v2 import genas
 from funsearch_v2.llmsr.ansatz import Ansatz, Criteria
 import os
 import pickle
 
 
-class JsonHistory(gas.History[Ansatz, Criteria]):
-    def __init__(self, worker_id: str = "default"):
+class JsonHistory(genas.History[Ansatz, Criteria]):
+    def __init__(self, Worker_id: str = "default"):
         # /tmpから読み込みなおす
         self._file_path = "/tmp/funsearch_history.pkl"
         self._data: list[tuple[Ansatz, Criteria]] = []
@@ -27,7 +27,7 @@ class JsonHistory(gas.History[Ansatz, Criteria]):
     def add(self, ansatz: Ansatz, criteria: Criteria) -> None:
         self._data.append((ansatz, criteria))
 
-    def sample(self) -> gas.Sample[Ansatz, Criteria]:
+    def sample(self) -> genas.Sample[Ansatz, Criteria]:
         return self._data
 
     def pareto_front(self) -> set[tuple[Ansatz, Criteria]]:

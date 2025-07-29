@@ -1,10 +1,10 @@
-from funsearch_v2 import gas
+from funsearch_v2 import genas
 from funsearch_v2.llmsr.ansatz import Ansatz, Criteria
 import jax.numpy as jnp
 import jaxopt
 
 
-class Evaluator(gas.Evaluator[Ansatz, Criteria]):
+class Evaluator(genas.Evaluator[Ansatz, Criteria]):
     def __init__(self, arg):
         self.config = arg
 
