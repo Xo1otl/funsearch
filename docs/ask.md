@@ -79,6 +79,8 @@ C4Context
     Rel(researcher, gas, "利用", "探索の実行、結果の分析")
     Rel(gas, llm, "利用", "API経由での仮説生成・評価")
     Rel(gas, external_analysis, "連携", "探索データの転送")
+
+    UpdateLayoutConfig($c4ShapeInRow="1")
 ```
 
 ## Level 2: Container Diagram (コンテナ図)
@@ -104,18 +106,26 @@ C4Container
     }
 
     Rel(researcher, ui_service, "利用", "HTTPS/CLI")
-    
     Rel(ui_service, command_service, "探索リクエスト送信・制御", "API Call/Queue")
+    UpdateRelStyle(ui_service, command_service, $offsetY="-40") 
     Rel(ui_service, query_service, "結果照会リクエスト", "API Call")
+    UpdateRelStyle(ui_service, query_service, $offsetY="30", $offsetX="60")
 
     Rel(command_service, ssot, "読み書き", "状態の永続化・復元")
+    UpdateRelStyle(command_service, ssot, $offsetY="40")
     Rel(command_service, llm, "リクエスト", "仮説生成・評価依頼")
+    UpdateRelStyle(command_service, llm, $offsetX="-60", $offsetY="-20")
 
     Rel(projection_service, ssot, "読み込み", "状態データ取得")
+    UpdateRelStyle(projection_service, ssot, $offsetX="-35", $offsetY="40")
     Rel(projection_service, analysis_db, "書き込み", "変換データ保存")
     Rel(projection_service, external_analysis, "転送 (任意)", "データ連携")
+    UpdateRelStyle(projection_service, external_analysis, $offsetY="-30")
 
     Rel(query_service, analysis_db, "クエリ実行", "データ照会")
+    UpdateRelStyle(query_service, analysis_db, $offsetY="35")
+
+    UpdateLayoutConfig($c4ShapeInRow="3")
 ```
 
 ## Level 3: Component Diagram (Command Serviceのコンポーネント図)
