@@ -106,18 +106,22 @@ class NSGAGenerator:
         return p2
 
     def _sbx_crossover(self, p1: Individual, p2: Individual) -> Tuple[Individual, Individual]:
-        """Simulated Binary Crossover (SBX)"""
+        """Simulated Binary Crossover (SBX) - 修正版1"""
         c1, c2 = p1.copy(), p2.copy()
         if random.random() > self.crossover_rate:
             return c1, c2
         for i in range(len(p1)):
-            if random.random() <= 0.5:
-                u = random.random()
-                beta = (2.0 * u)**(1.0 / (self.eta_c + 1.0)) if u <= 0.5 else (1.0 /
-                                                                               (2.0 * (1.0 - u)))**(1.0 / (self.eta_c + 1.0))
-                x1, x2 = min(p1[i], p2[i]), max(p1[i], p2[i])
-                c1[i] = 0.5 * ((1.0 + beta) * x1 + (1.0 - beta) * x2)
-                c2[i] = 0.5 * ((1.0 - beta) * x1 + (1.0 + beta) * x2)
+            u = random.random()
+            beta = (2.0 * u)**(1.0 / (self.eta_c + 1.0)) if u <= 0.5 else (1.0 /
+                                                                           (2.0 * (1.0 - u)))**(1.0 / (self.eta_c + 1.0))
+
+            p1_val, p2_val = p1[i], p2[i]
+
+            # 計算式を適用
+            c1[i] = 0.5 * ((1.0 + beta) * p1_val + (1.0 - beta) * p2_val)
+            c2[i] = 0.5 * ((1.0 - beta) * p1_val + (1.0 + beta) * p2_val)
+
+        # 最後に境界値でクリップする
         return np.clip(c1, self.lower_bound, self.upper_bound), np.clip(c2, self.lower_bound, self.upper_bound)
 
     def _polynomial_mutation(self, ind: Individual) -> Individual:
@@ -391,8 +395,7 @@ def main_controller():
     print("--- GAS PoC: NSGA-II on ZDT1 (Refactored) ---")
     CONFIG = {
         "N_VARS": 30, "BOUNDS": (0.0, 1.0), "POPULATION_SIZE": 100,
-        "MAX_GENERATIONS": 100, "CROSSOVER_RATE": 0.9,
-        # BUG FIX: ハイパーパラメータを元の値に戻す
+        "MAX_GENERATIONS": 500, "CROSSOVER_RATE": 0.9,
         "ETA_C": 15.0, "ETA_M": 15.0, "SEED": 42
     }
     CONFIG["MUTATION_RATE"] = 1.0 / CONFIG["N_VARS"]
