@@ -1,8 +1,7 @@
-import math
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List
 
 # ------------------------------------------------------------------------------
 # I. 環境設定 (Environment / Problem Definition)
