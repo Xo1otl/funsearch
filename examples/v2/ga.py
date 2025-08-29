@@ -15,13 +15,13 @@ MUTATION_RATE = 0.02
 CROSSOVER_RATE = 0.9
 
 # ------------------------------------------------------------------------------
-# II. Context & Data Structures
+# II. State & Data Structures
 # ------------------------------------------------------------------------------
 Individual = List[int]
 
 
 @dataclass
-class GAContext:
+class GAState:
     """探索プロセスの全状態を保持する"""
     generation: int
     # 現世代の全個体とその評価スコア
@@ -42,11 +42,10 @@ class EvaluationResult:
 # ------------------------------------------------------------------------------
 # III. GAS Core Components
 # ------------------------------------------------------------------------------
-
 class GAGenerator:
     """
     GAS: Generator
-    責務: 現在の状態(Context)から、評価すべき仮説のバッチを生成する。
+    責務: 現在の状態(State)から、評価すべき仮説のバッチを生成する。
     GA実装: 現世代の評価済み個体群から、選択・交叉・突然変異を経て次世代の未評価個体群を生成する。
     """
 
@@ -73,13 +72,13 @@ class GAGenerator:
                 mutated_ind[i] = 1 - mutated_ind[i]
         return mutated_ind
 
-    def generate(self, context: GAContext) -> List[Individual]:
+    def generate(self, state: GAState) -> List[Individual]:
         """次世代の評価対象となる個体群(candidates)を生成する"""
-        if context.generation == 0:
+        if state.generation == 0:
             return [[random.randint(0, 1) for _ in range(GENE_LENGTH)] for _ in range(POPULATION_SIZE)]
 
         new_population = []
-        scored_population = context.scored_population
+        scored_population = state.scored_population
         num_to_generate = POPULATION_SIZE - self.elite_size
 
         while len(new_population) < num_to_generate:
@@ -117,20 +116,20 @@ class GAStrategy:
     def __init__(self, elite_size: int):
         self.elite_size = elite_size
 
-    def step(self, eval_result: EvaluationResult, context: GAContext) -> Dict[str, Any]:
+    def step(self, eval_result: EvaluationResult, state: GAState) -> Dict[str, Any]:
         """状態の更新内容(updates)を計算する"""
         sorted_population = sorted(
-            context.scored_population, key=lambda item: item[1], reverse=True)
+            state.scored_population, key=lambda item: item[1], reverse=True)
         elites = sorted_population[:self.elite_size]
         next_scored_population = elites + eval_result.newly_scored
 
         scores = [score for _, score in next_scored_population]
         best_score = max(scores) if scores else 0.0
-        summary = {"generation": context.generation, "best_score": best_score}
+        summary = {"generation": state.generation, "best_score": best_score}
 
         updates = {
             "scored_population": next_scored_population,
-            "generation": context.generation + 1,
+            "generation": state.generation + 1,
             "summary": summary,
         }
         return updates
@@ -145,16 +144,16 @@ class Runner:
     責務: 探索ループ全体を指揮するオーケストレーター。
     """
 
-    def _apply_updates(self, context: GAContext, updates: Dict[str, Any]):
+    def _apply_updates(self, state: GAState, updates: Dict[str, Any]):
         for key, value in updates.items():
-            setattr(context, key, value)
+            setattr(state, key, value)
 
     def run(
         self,
         generator: GAGenerator,
         evaluator: OneMaxEvaluator,
         strategy: GAStrategy,
-        context: GAContext,
+        state: GAState,
         max_generations: int,
         target_score: float
     ):
@@ -166,37 +165,37 @@ class Runner:
         start_time = time.time()
         best_score = 0.0
 
-        while context.generation < max_generations:
+        while state.generation < max_generations:
             # --- 1. 仮説生成 (candidates Creation) ---
-            candidates = generator.generate(context)
+            candidates = generator.generate(state)
 
             # --- 2. 評価 (Gradient Calculation) ---
             evaluation_result = evaluator.evaluate(candidates)
 
             # --- 3. 更新内容の計算 (Optimizer Update) ---
-            updates = strategy.step(evaluation_result, context)
+            updates = strategy.step(evaluation_result, state)
 
             # --- 4. 適用 (Apply Updates) ---
-            self._apply_updates(context, updates)
+            self._apply_updates(state, updates)
 
             # --- 5. ログ出力・終了判定 ---
-            best_score = context.summary.get("best_score", 0.0)
+            best_score = state.summary.get("best_score", 0.0)
             print(
-                f"世代: {context.generation:03d} | "
+                f"世代: {state.generation:03d} | "
                 f"ベストスコア: {best_score:.0f}/{target_score:.0f}"
             )
             if best_score >= target_score:
                 print("\n最適解に到達しました。")
                 break
 
-        if context.generation >= max_generations and best_score < target_score:
+        if state.generation >= max_generations and best_score < target_score:
             print("\n最大世代数に到達しました。")
 
         end_time = time.time()
-        final_best_score = context.summary.get("best_score", 0.0)
+        final_best_score = state.summary.get("best_score", 0.0)
         print("\n--- 探索終了 ---")
         print(f"実行時間: {end_time - start_time:.2f} 秒")
-        print(f"最終世代: {context.generation}")
+        print(f"最終世代: {state.generation}")
         print(f"最終ベストスコア: {final_best_score:.0f}")
 
 
@@ -217,14 +216,14 @@ def main_controller():
     runner = Runner()
 
     # 初期状態の定義
-    initial_context = GAContext(generation=0)
+    initial_state = GAState(generation=0)
 
     # 実行: Runnerに各コンポーネントを直接渡す
     runner.run(
         generator=generator,
         evaluator=evaluator,
         strategy=strategy,
-        context=initial_context,
+        state=initial_state,
         max_generations=MAX_GENERATIONS,
         target_score=float(GENE_LENGTH)
     )

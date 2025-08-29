@@ -37,7 +37,7 @@ def zdt1(x: np.ndarray) -> Tuple[float, float]:
 
 
 # ------------------------------------------------------------------------------
-# II. Context & Data Structures
+# II. State & Data Structures
 # ------------------------------------------------------------------------------
 # 個体は遺伝子ベクトル (numpy配列)
 Individual = np.ndarray
@@ -53,8 +53,8 @@ class ScoredIndividual:
 
 
 @dataclass
-class NSGAContext:
-    """GAS: Context。探索プロセスの全状態を保持する。"""
+class NSGAState:
+    """GAS: State。探索プロセスの全状態を保持する。"""
     generation: int
     # 現世代の評価済み個体群 (P_t)
     scored_population: List[ScoredIndividual] = field(default_factory=list)
@@ -73,7 +73,7 @@ class EvaluationResult:
 class NSGAGenerator:
     """
     GAS: Generator
-    責務: Context(P_t)から、評価すべき仮説のバッチ（子個体群 Q_t）を生成する。
+    責務: State(P_t)から、評価すべき仮説のバッチ（子個体群 Q_t）を生成する。
     """
 
     def __init__(self, crossover_rate: float, mutation_rate: float, eta_c: float, eta_m: float, bounds: Tuple[float, float]):
@@ -141,14 +141,14 @@ class NSGAGenerator:
         mutated_ind = np.clip(mutated_ind, self.lower_bound, self.upper_bound)
         return mutated_ind
 
-    def generate(self, context: NSGAContext) -> List[Individual]:
+    def generate(self, state: NSGAState) -> List[Individual]:
         """子個体群(Q_t)を生成する"""
         # 初期世代 (Gen 0)
-        if context.generation == 0:
+        if state.generation == 0:
             return [np.random.uniform(self.lower_bound, self.upper_bound, N_VARS) for _ in range(POPULATION_SIZE)]
 
         # 第1世代以降
-        population = context.scored_population
+        population = state.scored_population
         new_population = []
 
         while len(new_population) < POPULATION_SIZE:
@@ -279,11 +279,11 @@ class NSGAStrategy:
                     (front[i+1].scores[m] -  # type: ignore
                      front[i-1].scores[m]) / range_m  # type: ignore
 
-    def step(self, eval_result: EvaluationResult, context: NSGAContext) -> Dict[str, Any]:
+    def step(self, eval_result: EvaluationResult, state: NSGAState) -> Dict[str, Any]:
         """状態の更新内容(updates)を計算する。"""
 
         # 1. 親(P_t)と子(Q_t)を結合 (R_t)
-        combined_population = context.scored_population + eval_result.newly_scored
+        combined_population = state.scored_population + eval_result.newly_scored
 
         # 2. R_tに対して高速非劣等ソートを実行
         fronts = self._fast_non_dominated_sort(combined_population)
@@ -313,14 +313,14 @@ class NSGAStrategy:
         # サマリー情報の更新
         pareto_front = [p for p in next_population if p.rank == 0]
         summary = {
-            "generation": context.generation,
+            "generation": state.generation,
             "pareto_front_size": len(pareto_front),
             "pareto_front_scores": [p.scores for p in pareto_front]
         }
 
         updates = {
             "scored_population": next_population,
-            "generation": context.generation + 1,
+            "generation": state.generation + 1,
             "summary": summary,
         }
         return updates
@@ -335,41 +335,41 @@ class Runner:
     責務: 探索ループ全体を指揮するオーケストレーター。
     """
 
-    def _apply_updates(self, context: NSGAContext, updates: Dict[str, Any]):
+    def _apply_updates(self, state: NSGAState, updates: Dict[str, Any]):
         for key, value in updates.items():
-            setattr(context, key, value)
+            setattr(state, key, value)
 
     def run(
         self,
         generator: NSGAGenerator,
         evaluator: ZDT1Evaluator,
         strategy: NSGAStrategy,
-        context: NSGAContext,
+        state: NSGAState,
         max_generations: int
     ):
         print(f"--- 探索開始 (最大 {max_generations} 世代) ---")
         start_time = time.time()
         history = []
 
-        while context.generation < max_generations:
+        while state.generation < max_generations:
             # --- 1. 仮説生成 (Generator: P_t -> Q_t) ---
-            candidates = generator.generate(context)
+            candidates = generator.generate(state)
 
             # --- 2. 評価 (Evaluator: Q_t 評価) ---
             evaluation_result = evaluator.evaluate(candidates)
 
             # --- 3. 更新内容の計算 (Strategy: P_t + Q_t -> P_t+1) ---
-            updates = strategy.step(evaluation_result, context)
+            updates = strategy.step(evaluation_result, state)
 
             # --- 4. 適用 (Apply Updates) ---
-            self._apply_updates(context, updates)
+            self._apply_updates(state, updates)
 
             # --- 5. ログ出力 ---
-            history.append(context.summary.copy())
-            pareto_size = context.summary.get("pareto_front_size", 0)
-            if context.generation % 10 == 0 or context.generation == max_generations:
+            history.append(state.summary.copy())
+            pareto_size = state.summary.get("pareto_front_size", 0)
+            if state.generation % 10 == 0 or state.generation == max_generations:
                 print(
-                    f"世代: {context.generation:03d} | パレートフロントサイズ: {pareto_size}")
+                    f"世代: {state.generation:03d} | パレートフロントサイズ: {pareto_size}")
 
         end_time = time.time()
         print("\n--- 探索終了 ---")
@@ -411,7 +411,7 @@ def plot_results(history):
         plt.ylabel('f2 (Objective 2)')
         plt.legend()
         plt.grid(True)
-        # plt.show() # 環境によっては表示されない場合があります
+        # plt.show()
         plt.savefig('nsga2_zdt1_pareto_front.png')
 
 
@@ -434,12 +434,12 @@ def main_controller():
     runner = Runner()
 
     # 初期状態の定義
-    initial_context = NSGAContext(generation=0)
+    initial_state = NSGAState(generation=0)
 
     # 実行
     history = runner.run(
         generator=generator, evaluator=evaluator, strategy=strategy,
-        context=initial_context, max_generations=MAX_GENERATIONS
+        state=initial_state, max_generations=MAX_GENERATIONS
     )
 
     # 結果の可視化

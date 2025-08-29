@@ -50,7 +50,7 @@ class FixedTreeEnvironment:
 
 
 # ------------------------------------------------------------------------------
-# II. Context & Data Structures
+# II. State & Data Structures
 # ------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class NodeStats:
@@ -60,7 +60,7 @@ class NodeStats:
 
 
 @dataclass
-class MCTSContext:
+class MCTSState:
     """探索プロセスの全状態を保持する"""
     iteration: int
     tree_stats: Dict[int, NodeStats]
@@ -85,7 +85,7 @@ class EvaluationResult:
 class MCTSGenerator:
     """
     GAS: Generator
-    責務: 現在の状態(Context)から、評価すべき仮説のバッチを生成する。
+    責務: 現在の状態(State)から、評価すべき仮説のバッチを生成する。
     optaxアナロジー: DataLoader / データ前処理
     MCTS実装: UCB1に基づき、次に探索すべき経路(path)を1つ生成する。
     """
@@ -103,12 +103,12 @@ class MCTSGenerator:
         exploration = self.C * math.sqrt(math.log(parent_N) / child_stats.N)
         return exploitation + exploration
 
-    def generate(self, context: MCTSContext, environment: FixedTreeEnvironment) -> List[Node]:
+    def generate(self, state: MCTSState, environment: FixedTreeEnvironment) -> List[Node]:
         """仮説(path)を生成する"""
         node = environment.root
         path = [node]
         while not node.is_leaf():
-            parent_N = context.get_stats(node.id).N
+            parent_N = state.get_stats(node.id).N
 
             # --- ERROR FIX ---
             # Nodeオブジェクトを辞書のキーとして使うとTypeErrorが発生するため修正。
@@ -116,7 +116,7 @@ class MCTSGenerator:
             best_child = max(
                 node.children,
                 key=lambda child: self._calculate_ucb1(
-                    context.get_stats(child.id), parent_N)
+                    state.get_stats(child.id), parent_N)
             )
 
             node = best_child
@@ -151,22 +151,22 @@ class MCTSStrategy:
     MCTS実装: 評価結果(pathとreward)に基づき、Backpropagation計算を行う。
     """
 
-    def step(self, eval_result: EvaluationResult, context: MCTSContext) -> Dict[str, Any]:
+    def step(self, eval_result: EvaluationResult, state: MCTSState) -> Dict[str, Any]:
         """状態の更新内容(updates)を計算する"""
-        next_tree_stats = context.tree_stats.copy()
+        next_tree_stats = state.tree_stats.copy()
         for node in eval_result.path:
-            current_stats = context.get_stats(node.id)
+            current_stats = state.get_stats(node.id)
             new_stats = NodeStats(
                 N=current_stats.N + 1,
                 Q=current_stats.Q + eval_result.reward
             )
             next_tree_stats[node.id] = new_stats
 
-        summary = {"iteration": context.iteration,
+        summary = {"iteration": state.iteration,
                    "reward_obtained": eval_result.reward}
         updates = {
             "tree_stats": next_tree_stats,
-            "iteration": context.iteration + 1,
+            "iteration": state.iteration + 1,
             "summary": summary,
         }
         return updates
@@ -182,63 +182,63 @@ class Runner:
     optaxアナロジー: Training Loop
     """
 
-    def _apply_updates(self, context: MCTSContext, updates: Dict[str, Any]):
+    def _apply_updates(self, state: MCTSState, updates: Dict[str, Any]):
         """計算された更新内容を状態にアトミックに適用する"""
         for key, value in updates.items():
-            setattr(context, key, value)
+            setattr(state, key, value)
 
-    def _get_best_path(self, context: MCTSContext, environment: FixedTreeEnvironment) -> Tuple[List[Node], float]:
+    def _get_best_path(self, state: MCTSState, environment: FixedTreeEnvironment) -> Tuple[List[Node], float]:
         """現在の統計情報から最も有望な経路を選択する"""
         node = environment.root
         path = [node]
         while not node.is_leaf():
             visitable_children = [
-                c for c in node.children if context.get_stats(c.id).N > 0]
+                c for c in node.children if state.get_stats(c.id).N > 0]
             if not visitable_children:
                 break
 
             best_child = max(
                 visitable_children,
-                key=lambda c: context.get_stats(
-                    c.id).Q / context.get_stats(c.id).N
+                key=lambda c: state.get_stats(
+                    c.id).Q / state.get_stats(c.id).N
             )
             node = best_child
             path.append(node)
 
         return (path, path[-1].reward if path[-1].reward is not None else 0.0) if path[-1].is_leaf() else (path, 0.0)
 
-    def run(self, generator: MCTSGenerator, evaluator: MCTSEvaluator, strategy: MCTSStrategy, context: MCTSContext, environment: FixedTreeEnvironment, max_iterations: int):
+    def run(self, generator: MCTSGenerator, evaluator: MCTSEvaluator, strategy: MCTSStrategy, state: MCTSState, environment: FixedTreeEnvironment, max_iterations: int):
         print(f"--- 探索開始 (最大 {max_iterations} イテレーション) ---")
         print(
             f"環境: 深さ={environment.tree_depth}, ノード数={environment.total_nodes}")
         print(f"目標（真の最大報酬）: {environment.best_reward:.4f}")
         start_time = time.time()
 
-        while context.iteration < max_iterations:
+        while state.iteration < max_iterations:
             # --- 1. 仮説生成 (candidates Creation) ---
-            path_candidates = generator.generate(context, environment)
+            path_candidates = generator.generate(state, environment)
 
             # --- 2. 評価 (Gradient Calculation) ---
             evaluation_result = evaluator.evaluate(
                 path_candidates, environment)
 
             # --- 3. 更新内容の計算 (Optimizer Update) ---
-            updates = strategy.step(evaluation_result, context)
+            updates = strategy.step(evaluation_result, state)
 
             # --- 4. 適用 (Apply Updates) ---
-            self._apply_updates(context, updates)
+            self._apply_updates(state, updates)
 
             # --- 5. ログ出力 ---
-            if (context.iteration % (max_iterations // 10 or 1) == 0) or context.iteration == max_iterations:
-                _, best_reward = self._get_best_path(context, environment)
+            if (state.iteration % (max_iterations // 10 or 1) == 0) or state.iteration == max_iterations:
+                _, best_reward = self._get_best_path(state, environment)
                 print(
-                    f"イテレーション: {context.iteration:04d} | "
-                    f"今回の報酬: {context.summary['reward_obtained']:.4f} | "
+                    f"イテレーション: {state.iteration:04d} | "
+                    f"今回の報酬: {state.summary['reward_obtained']:.4f} | "
                     f"現在の推定最良報酬: {best_reward:.4f}"
                 )
 
         end_time = time.time()
-        final_path, final_reward = self._get_best_path(context, environment)
+        final_path, final_reward = self._get_best_path(state, environment)
         print("\n--- 探索終了 ---")
         print(f"実行時間: {end_time - start_time:.4f} 秒")
         print(
@@ -268,7 +268,7 @@ def main_controller():
     strategy = MCTSStrategy()
 
     # 初期状態の定義
-    initial_context = MCTSContext(iteration=0, tree_stats={})
+    initial_state = MCTSState(iteration=0, tree_stats={})
 
     # 実行エンジンの初期化と実行
     runner = Runner()
@@ -276,7 +276,7 @@ def main_controller():
         generator=generator,
         evaluator=evaluator,
         strategy=strategy,
-        context=initial_context,
+        state=initial_state,
         environment=environment,
         max_iterations=MAX_ITERATIONS
     )
