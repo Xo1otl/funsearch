@@ -97,8 +97,10 @@ class NSGAGenerator:
     upper_bound: float
 
     def _tournament_selection(self, population: List[ScoredIndividual]) -> ScoredIndividual:
-        """バイナリトーナメント選択"""
-        p1, p2 = random.sample(population, 2)
+        """バイナリトーナメント選択 (復元抽出)"""
+        # NOTE: GAではエリートが何度も選ばれることに問題はないため復元抽出でいい
+        p1 = random.choice(population)
+        p2 = random.choice(population)
         if (p1.rank, -p1.crowding_distance) < (p2.rank, -p2.crowding_distance):
             return p1
         return p2
@@ -185,7 +187,7 @@ class NSGAStrategy:
 
     def _dominates(self, scores1: Tuple[float, ...], scores2: Tuple[float, ...]) -> bool:
         """優越関係を判定する (最小化問題)"""
-        # NOTE: このロジック変更禁止
+        # NOTE: anyやallを使うと遅くなるのであえて単純なforループしてあり変更禁止
         better_in_at_least_one = False
         for s1, s2 in zip(scores1, scores2):
             if s1 > s2:
@@ -221,7 +223,7 @@ class NSGAStrategy:
         while fronts[i]:
             next_front = []
             for p in fronts[i]:
-                # NOTE: population.index(p) はエラーになるため、pop_mapを使用
+                # NOTE: pop_mapを使用してください
                 p_idx = pop_map[id(p)]
                 for q_idx in S[p_idx]:
                     n[q_idx] -= 1
