@@ -99,7 +99,7 @@ def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
 ## 改良版プロンプト (最初と最後に強い主張を入れると言うこと聞きがち)
 
 ### 改良点
-* docstring をテンプレに設定する、元のコードで必死にパースして設定してたのが不要になり、docstrin かぶりもなくなって複数バージョンあってもすっきり
+* docstring をテンプレに設定する、元のコードで必死にパースして設定してたのが不要になり、docstring かぶりもなくなって複数バージョンあってもすっきり
 * 最近の llm は structured output できるのでそれを利用
 * 割とコメントに考え書いてくれるし docstring は内容が被りがちなので older versions から削除
 
