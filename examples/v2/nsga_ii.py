@@ -106,7 +106,7 @@ class NSGAGenerator:
         return p2
 
     def _sbx_crossover(self, p1: Individual, p2: Individual) -> Tuple[Individual, Individual]:
-        """Simulated Binary Crossover (SBX) - 修正版1"""
+        """Simulated Binary Crossover (SBX)"""
         c1, c2 = p1.copy(), p2.copy()
         if random.random() > self.crossover_rate:
             return c1, c2
@@ -114,14 +114,9 @@ class NSGAGenerator:
             u = random.random()
             beta = (2.0 * u)**(1.0 / (self.eta_c + 1.0)) if u <= 0.5 else (1.0 /
                                                                            (2.0 * (1.0 - u)))**(1.0 / (self.eta_c + 1.0))
-
             p1_val, p2_val = p1[i], p2[i]
-
-            # 計算式を適用
             c1[i] = 0.5 * ((1.0 + beta) * p1_val + (1.0 - beta) * p2_val)
             c2[i] = 0.5 * ((1.0 - beta) * p1_val + (1.0 + beta) * p2_val)
-
-        # 最後に境界値でクリップする
         return np.clip(c1, self.lower_bound, self.upper_bound), np.clip(c2, self.lower_bound, self.upper_bound)
 
     def _polynomial_mutation(self, ind: Individual) -> Individual:
