@@ -12,7 +12,7 @@ type Updates = dict[str, Any]
 # --- 状態オブジェクト (State Objects) ---
 @dataclass(frozen=True)
 class SearchState:
-    """探索プロセスの主要な状態。イミュータブル。"""
+    """探索プロセスの主要な状態。"""
     generation: int
     scored_population: list[tuple[Individual, float]
                             ] = field(default_factory=list)
@@ -21,7 +21,7 @@ class SearchState:
 
 @dataclass(frozen=True)
 class StrategyState:
-    """探索戦略に固有の状態。イミュータブル。"""
+    """探索戦略に固有の状態。"""
     pass
 
 

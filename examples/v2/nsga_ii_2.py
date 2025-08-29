@@ -26,7 +26,7 @@ class ScoredIndividual:
 
 @dataclass
 class SearchState:
-    """探索プロセスの全状態を保持する (旧NSGAState)"""
+    """探索プロセスの全状態を保持する"""
     generation: int
     scored_population: List[ScoredIndividual] = field(default_factory=list)
     summary: Dict[str, Any] = field(default_factory=dict)
@@ -34,7 +34,7 @@ class SearchState:
 
 @dataclass(frozen=True)
 class Evidence:
-    """EvaluateFnが返す評価結果 (旧EvaluationResult)"""
+    """EvaluateFnが返す評価結果"""
     newly_scored: List[ScoredIndividual]
 
 
@@ -306,7 +306,7 @@ def new_nsga_strategy(population_size: int) -> Strategy:
 class Orchestrator:
     """
     GAS: Orchestrator
-    探索ループ全体を管理し、状態の更新を一元的に担う実行エンジン (旧Runner)。
+    探索ループ全体を管理し、状態の更新を一元的に担う実行エンジン。
     """
 
     def _apply_updates(self, search_state: SearchState, updates: Dict[str, Any]):

@@ -62,7 +62,7 @@ class NodeStats:
 
 @dataclass(frozen=True)
 class SearchState:
-    """探索プロセスの主要な状態。イミュータブル。"""
+    """探索プロセスの主要な状態。"""
     iteration: int
     tree_stats: Dict[int, NodeStats]
     summary: Dict[str, Any] = field(default_factory=dict)
@@ -73,7 +73,7 @@ class SearchState:
 
 @dataclass(frozen=True)
 class StrategyState:
-    """探索戦略に固有の状態。イミュータブル。"""
+    """探索戦略に固有の状態。"""
     pass
 
 
