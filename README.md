@@ -45,7 +45,6 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * 現状のスコアパターン完全一致のクラスタリング条件は厳格すぎて細分化されそう (やってみたら意外と被るの多いらしくてちゃんとクラスタリングされてた)
 * 各テストに対する合否分布や、プログラムの構造でクラスタリングしてみてもいい気がする
 * 分極反転幅構造だけでなく、材料の屈折率の波長依存性もコントロールが可能であり、それの探索でLLM-SRできるかもしれない。どんな波長依存性を持つ材料を使えばいいのかについて探索できそう。
-* ??? 「材料の波長依存性は量子井戸とかを工夫してバンドギャップ内にピークが来るように...」
 
 # Memo
 * 以下の環境変数でjaxのメモリのプリアロケートを制限しないとPCが固まる
@@ -55,48 +54,9 @@ Interface にはプロパティを持てない、プロパティにも制約を�
 * 関数の generics は paramspec でできる、型の渡し方などは Callable と同じ
 * bfgs は jaxopts にあるけどこれはメンテされてないから使いたく無かった、しかし発見した npda の式が bfgs でしか収束しなくてびっくり
 * inspect.getsource() 使えばコメントを含む関数のソースコードを取得できる
-* NPDAの計算たまたまうまく行ったけど、SHGを全く知らないモデルに対してSHG効率計算しろっていうの無茶振りなのでSecond Harmonic Generationと言うべきだった
+* 島モデルGAはOrchestratorの中で論理的に実装される。実際に島の数だけマルチプロセスするわけではない。(並列処理の為に物理的にCPUを増やさないのと同じ理屈)
 
-## もとの prompt 例
-```
-You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. Complete the 'equation' function below, considering the physical meaning and relationships of inputs.
-
-
-"""
-Find the mathematical function skeleton that represents acceleration in a damped nonlinear oscillator system with driving force, given data on position, and velocity. 
-"""
-
-
-import numpy as np
-import scipy
-
-#Initialize parameters
-MAX_NPARAMS = 10
-PRAMS_INIT = [1.0]*MAX_NPARAMS
-
-
-def equation_v0(x: np.ndarray, v: np.ndarray, params: np.ndarray):
-    """ Mathematical function for acceleration in a damped nonlinear oscillator
-
-    Args:
-        x: A numpy array representing observations of current position.
-        v: A numpy array representing observations of velocity.
-        params: Array of numeric constants or parameters to be optimized
-
-    Return:
-        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
-    """
-    dv = params[0] * x  +  params[1] * v  + params[2]
-    return dv
-
-
-
-def equation_v1(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """Improved version of `equation_v0`.    """
-
-```
-
-## 改良版プロンプト (最初と最後に強い主張を入れると言うこと聞きがち)
+## 改良版プロンプト
 
 ### 改良点
 * docstring をテンプレに設定する、元のコードで必死にパースして設定してたのが不要になり、docstring かぶりもなくなって複数バージョンあってもすっきり
