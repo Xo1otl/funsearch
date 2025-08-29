@@ -98,7 +98,7 @@ class NSGAGenerator:
 
     def _tournament_selection(self, population: List[ScoredIndividual]) -> ScoredIndividual:
         """バイナリトーナメント選択 (復元抽出)"""
-        # NOTE: GAではエリートが何度も選ばれることに問題はないため復元抽出でいい
+        # NOTE: GAではエリートが何度も選ばれることに問題はないため復元抽出でよく変更禁止
         p1 = random.choice(population)
         p2 = random.choice(population)
         if (p1.rank, -p1.crowding_distance) < (p2.rank, -p2.crowding_distance):
