@@ -26,7 +26,7 @@ def dataset_evaluator(skeleton: function.Skeleton, arg: Dataset) -> float:
 
     def loss(params):
         y_pred = skeleton(*input_args, params)
-        return np.mean((y_pred - outputs) ** 2)
+        return np.mean(np.abs(y_pred - outputs) ** 2)
 
     result = minimize(loss, [1.0] * arg.max_nparams)
     loss_val = result.fun
@@ -44,7 +44,7 @@ def enhanced_dataset_evaluator(skeleton: function.Skeleton, arg: Dataset) -> Eva
 
     def loss(params):
         y_pred = skeleton(*input_args, params)
-        return np.mean((y_pred - outputs) ** 2)
+        return np.mean(np.abs(y_pred - outputs) ** 2)
 
     result = minimize(loss, [1.0] * arg.max_nparams)
     mse = result.fun

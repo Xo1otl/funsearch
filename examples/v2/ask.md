@@ -1,3 +1,10 @@
+# Architecture
+設計は二つの状態(`SearchState`, `StrategyState`)と四つのコンポーネント(`GenerateFn`, `EvaluateFn`, `Strategy`, `Orchestrator`)から構成されます。
+
+optaxの設計を参考にしており、generate_fnがbatchの準備のような処理で、jax.gradがevaluate_fnで、strategy.stepがoptimizer.updateで、apply_updatesがoptax.apply_updatesのアナロジーに対応します。
+
+# MCTS PoC
+```python
 import math
 import random
 import time
@@ -514,3 +521,14 @@ def main_controller():
 
 if __name__ == '__main__':
     main_controller()
+```
+
+# Your Task
+現在のArchitectureを維持したまま、いくつかの改良を加えて欲しい。
+## 行動の枝刈り
+* 壁への移動は除外
+* 直前の位置へ戻る移動は除外
+## 詰み対策
+* 詰んだ場合はNegative Forwardを与えるのがいいのか？
+
+以上の改良を適切に加えて、完成した完全なコードを見せてください。

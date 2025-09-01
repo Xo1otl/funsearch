@@ -189,11 +189,17 @@ class Orchestrator:
         strategy_state = strategy.init()
 
         while search_state.generation < max_generations:
+            # 1. Generate: 新しい仮説(Candidates)を生成
             candidates = generate_fn(search_state)
+
+            # 2. Evaluate: Candidatesを評価し、Evidenceを得る
             evidence = evaluate_fn(candidates)
+
+            # 3. Step: Strategyが更新内容(updates)を計算
             updates, strategy_state = strategy.step(
                 evidence, strategy_state, search_state)
 
+            # 4. Apply: Orchestratorが状態を更新
             search_state = self._apply_updates(search_state, updates)
 
             best_score = search_state.summary.get("best_score", 0.0)

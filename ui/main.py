@@ -70,7 +70,7 @@ def run_funsearch_process(formula: str, theory_explanation: str, constants_descr
             return
 
     try:
-        lines = [list(map(float, line.split(',')))
+        lines = [list(map(complex, line.split(',')))
                  for line in data.strip().split('\n') if line.strip()]
         if not lines:
             raise ValueError("No data points found or data is empty.")
