@@ -26,3 +26,13 @@ variable "slack_webhook_url" {
   type        = string
   sensitive   = true
 }
+
+variable "github_owner" {
+  description = "GitHub owner (username or organization) for the repository"
+  type        = string
+}
+
+variable "github_repo" {
+  description = "GitHub repository name for the Cloud Build trigger"
+  type        = string
+}

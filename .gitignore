@@ -4,3 +4,4 @@ out/
 !examples/logs/npda_numpy_20250405_082119/*
 private/
 env.py
+terraform.tfvars

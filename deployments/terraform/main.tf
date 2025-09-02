@@ -1,4 +1,8 @@
 terraform {
+  backend "gcs" {
+    bucket = "qunasys-ai-dev-funsearch-tfstate"
+    prefix = "terraform/state"
+  }
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -93,7 +97,7 @@ resource "google_cloudbuild_trigger" "funsearch" {
     }
   }
 
-  included_files = ["src/**", "ui/**", "Dockerfile", "pyproject.toml"]
+  included_files = ["src/funsearch/**", "ui/**", "Dockerfile", "pyproject.toml.docker"]
 
   build {
     options {
@@ -136,4 +140,3 @@ resource "google_cloudbuild_trigger" "funsearch" {
 
   depends_on = [google_project_service.cloud_build_api]
 }
-
