@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 # --- データ構造 ---
 Ansatz = np.ndarray
-Queries = List[Ansatz]
+Query = List[Ansatz]
 
 
 @dataclass
@@ -44,9 +44,9 @@ class Evidence:
 
 
 # --- コア関数のインターフェース定義 ---
-ProposeFn = Callable[[SearchState], Queries]
-ObserveFn = Callable[[Queries], Evidence]
-PropagateFn = Callable[[Evidence, SearchState], SearchState]
+ProposeFn = Callable[[SearchState], Query]
+ObserveFn = Callable[[Query], Evidence]
+PropagateFn = Callable[[Query, Evidence, SearchState], SearchState]
 
 
 # ==============================================================================
@@ -70,10 +70,10 @@ def new_zdt1_observe_fn(n_vars: int) -> ObserveFn:
         f2 = g * h
         return float(f1), float(f2)
 
-    def observe_fn(queries: Queries) -> Evidence:
+    def observe_fn(query: Query) -> Evidence:
         """候補個体群をZDT1で評価し、Evidenceオブジェクトを返す"""
         newly_scored = [ScoredAnsatz(
-            ansatz=ind, scores=zdt1(ind)) for ind in queries]
+            ansatz=ind, scores=zdt1(ind)) for ind in query]
         return Evidence(newly_scored=newly_scored)
     return observe_fn
 
@@ -95,6 +95,7 @@ class NSGAProposer:
 
     def _tournament_selection(self, population: List[ScoredAnsatz]) -> ScoredAnsatz:
         """バイナリトーナメント選択"""
+        # NOTE: GAでは重複あり選択です、このロジックは編集禁止
         p1 = random.choice(population)
         p2 = random.choice(population)
         if (p1.rank, -p1.crowding_distance) < (p2.rank, -p2.crowding_distance):
@@ -139,7 +140,7 @@ class NSGAProposer:
                 mutated_ind[i] = x + delta_q * range_width
         return np.clip(mutated_ind, self.lower_bound, self.upper_bound)
 
-    def propose_fn(self, search_state: SearchState) -> Queries:
+    def propose_fn(self, search_state: SearchState) -> Query:
         """ProposeFnの本体。探索状態に応じて次世代の候補を生成する。"""
         if search_state.generation == 0:
             return [np.random.uniform(self.lower_bound, self.upper_bound, self.n_vars) for _ in range(self.population_size)]
@@ -193,6 +194,7 @@ class NSGAPropagator:
         fronts: List[List[ScoredAnsatz]] = [[]]
         S = [[] for _ in range(len(population))]
         n = [0] * len(population)
+        # NOTE: MAPを使用して高速にindexを取得しています、変更禁止
         pop_map = {id(p): i for i, p in enumerate(population)}
 
         for i, p in enumerate(population):
@@ -245,7 +247,7 @@ class NSGAPropagator:
                 front[i].crowding_distance += (front[i+1].scores[m] -
                                                front[i-1].scores[m]) / range_m
 
-    def propagate_fn(self, evidence: Evidence, search_state: SearchState) -> SearchState:
+    def propagate_fn(self, query: Query, evidence: Evidence, search_state: SearchState) -> SearchState:
         """
         評価結果と現在の探索状態から、次世代の新しいSearchStateオブジェクトを生成して返す。
         """
@@ -307,14 +309,14 @@ class Orchestrator:
         search_state = initial_search_state
 
         while search_state.generation < max_generations:
-            # 1. Propose: 新しい仮説(Queries)を生成
-            queries = propose_fn(search_state)
+            # 1. Propose: 新しい仮説(Query)を生成
+            query = propose_fn(search_state)
 
-            # 2. Observe: Queriesを評価し、Evidenceを得る
-            evidence = observe_fn(queries)
+            # 2. Observe: Queryを評価し、Evidenceを得る
+            evidence = observe_fn(query)
 
             # 3. Propagate: 次世代のSearchStateを計算
-            search_state = propagate_fn(evidence, search_state)
+            search_state = propagate_fn(query, evidence, search_state)
 
             # --- ログと履歴の記録 ---
             history.append(search_state.summary)

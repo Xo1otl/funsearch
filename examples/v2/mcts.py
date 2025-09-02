@@ -132,17 +132,14 @@ class SearchState:
         return self.n_stats.get(state, 0)
 
 
-@dataclass(frozen=True)
-class Evidence:
-    """ObserveFnが返す評価結果。（シミュレーション結果）"""
-    selected_path: MDPPath
-    G_rollout: float
+type Evidence = float
+"""ObserveFnが返す評価結果。（シミュレーション結果）"""
 
 
 # --- III. コア関数のインターフェース定義 ---
 ProposeFn = Callable[[SearchState, GridWorldEnvironment], MDPPath]
 ObserveFn = Callable[[MDPPath, GridWorldEnvironment], Evidence]
-PropagateFn = Callable[[Evidence, SearchState], SearchState]
+PropagateFn = Callable[[MDPPath, Evidence, SearchState], SearchState]
 
 
 # --- IV. コンポーネント実装 (MCTS Implementation) ---
@@ -203,15 +200,15 @@ class MCTSComponents:
             current_state = next_state
             depth += 1
             rollout_step += 1
-        return Evidence(selected_path=path_candidate, G_rollout=G_rollout)
+        return G_rollout
 
     # --- PropagateFn (Backpropagation) ---
-    def propagate_fn(self, evidence: Evidence, search_state: SearchState) -> SearchState:
+    def propagate_fn(self, query: MDPPath, evidence: Evidence, search_state: SearchState) -> SearchState:
         """Backpropagation: シミュレーション結果を用いて新しいSearchStateを生成する。"""
         next_q_stats = search_state.q_stats.copy()
         next_n_stats = search_state.n_stats.copy()
-        path = evidence.selected_path
-        G = evidence.G_rollout
+        path = query  # Use the query directly
+        G = evidence
 
         for i in range(len(path.actions) - 1, -1, -1):
             state, action, reward = path.states[i], path.actions[i], path.rewards[i]
@@ -273,9 +270,9 @@ class Orchestrator:
         search_state = initial_search_state
 
         while search_state.iteration < max_iterations:
-            path_candidate = propose_fn(search_state, environment)
-            evidence = observe_fn(path_candidate, environment)
-            search_state = propagate_fn(evidence, search_state)
+            query = propose_fn(search_state, environment)
+            evidence = observe_fn(query, environment)
+            search_state = propagate_fn(query, evidence, search_state)
 
             if (search_state.iteration % (max_iterations // 10 or 1) == 0) or search_state.iteration == max_iterations:
                 _, best_reward = self._get_best_plan(search_state, environment)

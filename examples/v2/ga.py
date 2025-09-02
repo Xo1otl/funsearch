@@ -5,17 +5,13 @@ from typing import Any, Callable
 
 # --- 型定義 (Type Definitions) ---
 type Ansatz = list[int]
-type Queries = list[Ansatz]
+type Query = list[Ansatz]
 
 
 # --- 状態・評価結果オブジェクト (State & Evidence Objects) ---
-
 @dataclass(frozen=True)
 class SearchState:
-    """
-    探索プロセスの全状態を保持するイミュータブルなデータクラス (Originator)。
-    Orchestratorがインメモリで管理する。
-    """
+    """探索プロセスの全状態を保持するイミュータブルなデータクラス (Originator)。"""
     generation: int
     scored_population: list[tuple[Ansatz, float]] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
@@ -23,32 +19,21 @@ class SearchState:
 
 @dataclass(frozen=True)
 class Evidence:
-    """ObserveFnが返す評価結果。"""
-    newly_scored: list[tuple[Ansatz, float]]
+    """ObserveFnが返す評価結果。スコアのリストのみを保持する。"""
+    scores: list[float]
 
 
 # --- コア関数のインターフェース定義 (Core Function Interfaces) ---
-
-ProposeFn = Callable[[SearchState], Queries]
-"""SearchStateに基づき、評価対象の仮説群(Queries)を生成する関数。"""
-
-ObserveFn = Callable[[Queries], Evidence]
-"""仮説群(Queries)を評価し、その結果(Evidence)を返す関数。"""
-
-PropagateFn = Callable[[Evidence, SearchState], SearchState]
-"""評価結果(Evidence)と現在のSearchStateから、次世代のSearchStateを計算して返す関数。"""
+ProposeFn = Callable[[SearchState], Query]
+ObserveFn = Callable[[Query], Evidence]
+PropagateFn = Callable[[Query, Evidence, SearchState], SearchState]
 
 
 # --- コンポーネント実装 (Component Implementations) ---
 
 # I. ProposeFn: 仮説生成器 (Genetic Algorithm)
-
 class GAProposer:
-    """
-    遺伝的アルゴリズムに基づき仮説を生成するロジックをカプセル化する。
-    __init__を持たないステートレスなコンポーネント。
-    ハイパーパラメータはファクトリ関数経由で設定される。
-    """
+    """遺伝的アルゴリズムに基づくProposeFnのロジックをカプセル化したクラス。"""
     gene_length: int
     population_size: int
     mutation_rate: float
@@ -56,48 +41,46 @@ class GAProposer:
     tournament_size: int
     elite_size: int
 
-    def _selection(self, scored_population: list[tuple[Ansatz, float]]) -> Ansatz:
-        """トーナメント選択"""
-        tournament = random.sample(scored_population, self.tournament_size)
+    def _selection(
+        self, scored_population: list[tuple[Ansatz, float]], tournament_size: int
+    ) -> Ansatz:
+        tournament = random.sample(scored_population, tournament_size)
         return max(tournament, key=lambda item: item[1])[0]
 
-    def _crossover(self, p1: Ansatz, p2: Ansatz) -> tuple[Ansatz, Ansatz]:
-        """交叉"""
-        if random.random() < self.crossover_rate:
+    def _crossover(self, p1: Ansatz, p2: Ansatz, crossover_rate: float) -> tuple[Ansatz, Ansatz]:
+        if random.random() < crossover_rate:
             pt = random.randint(1, len(p1) - 1)
             return p1[:pt] + p2[pt:], p2[:pt] + p1[pt:]
         return p1[:], p2[:]
 
-    def _mutation(self, ind: Ansatz) -> Ansatz:
-        """突然変異"""
+    def _mutation(self, ind: Ansatz, mutation_rate: float) -> Ansatz:
         mutated_ind = ind[:]
         for i in range(len(mutated_ind)):
-            if random.random() < self.mutation_rate:
+            if random.random() < mutation_rate:
                 mutated_ind[i] = 1 - mutated_ind[i]
         return mutated_ind
 
-    def propose_fn(self, state: SearchState) -> Queries:
-        """
-        ProposeFnインターフェースに準拠したメソッド。
-        現行世代の状態から次世代の候補群を生成する。
-        """
+    def propose_fn(self, state: SearchState) -> Query:
+        """ハイパーパラメータをクロージャとして保持するProposeFnの実装。"""
         if state.generation == 0:
-            # 初代はランダムに生成
             return [[random.randint(0, 1) for _ in range(self.gene_length)]
                     for _ in range(self.population_size)]
 
         new_population: list[Ansatz] = []
-        scored_population = state.scored_population
-        # エリート個体を除く、生成すべき個体数
         num_to_propose = self.population_size - self.elite_size
 
         while len(new_population) < num_to_propose:
-            parent1 = self._selection(scored_population)
-            parent2 = self._selection(scored_population)
-            child1, child2 = self._crossover(parent1, parent2)
-            new_population.append(self._mutation(child1))
+            parent1 = self._selection(
+                state.scored_population, self.tournament_size)
+            parent2 = self._selection(
+                state.scored_population, self.tournament_size)
+            child1, child2 = self._crossover(
+                parent1, parent2, self.crossover_rate)
+            new_population.append(
+                self._mutation(child1, self.mutation_rate))
             if len(new_population) < num_to_propose:
-                new_population.append(self._mutation(child2))
+                new_population.append(
+                    self._mutation(child2, self.mutation_rate))
         return new_population
 
 
@@ -109,9 +92,6 @@ def new_ga_propose_fn(
     tournament_size: int,
     elite_size: int,
 ) -> ProposeFn:
-    """
-    GAProposerを設定し、ProposeFnとして参照を返すファクトリ関数。
-    """
     proposer = GAProposer()
     proposer.gene_length = gene_length
     proposer.population_size = population_size
@@ -123,40 +103,26 @@ def new_ga_propose_fn(
 
 
 # II. ObserveFn: 仮説評価器 (OneMax Problem)
-
-def observe_onemax_fn(queries: Queries) -> Evidence:
-    """
-    OneMax問題の評価関数 (ObserveFn)。
-    ステートフルな要素がないため、単純な関数として実装。
-    """
-    newly_scored = [(ind, float(sum(ind))) for ind in queries]
-    return Evidence(newly_scored=newly_scored)
+def observe_onemax_fn(query: Query) -> Evidence:
+    """OneMax問題の評価関数。ステートレスなため単純な関数として実装。"""
+    scores = [float(sum(ind)) for ind in query]
+    return Evidence(scores=scores)
 
 
 # III. PropagateFn: 更新戦略 (Genetic Algorithm)
+def new_ga_propagate_fn(elite_size: int) -> PropagateFn:
+    """設定済みのPropagateFnを返すファクトリ関数。"""
 
-class GAPropagator:
-    """
-    遺伝的アルゴリズムの世代交代戦略をカプセル化する。
-    __init__を持たないステートレスなコンポーネント。
-    """
-    elite_size: int
-
-    def propagate_fn(self, evidence: Evidence, search_state: SearchState) -> SearchState:
-        """
-        PropagateFnインターフェースに準拠したメソッド。
-        評価結果と現行状態から、完全に新しい次世代のSearchStateを構築して返す。
-        """
-        # 現行世代からエリート個体を選択
+    def propagate_fn(query: Query, evidence: Evidence, search_state: SearchState) -> SearchState:
+        """elite_sizeをクロージャとして保持するPropagateFnの実装。"""
         sorted_population = sorted(
             search_state.scored_population, key=lambda item: item[1], reverse=True
         )
-        elites = sorted_population[:self.elite_size]
+        elites = sorted_population[:elite_size]
 
-        # 次世代の個体群 = (現行世代のエリート + 新たに評価された個体)
-        next_scored_population = elites + evidence.newly_scored
+        newly_scored = list(zip(query, evidence.scores))
+        next_scored_population = elites + newly_scored
 
-        # サマリー情報を計算
         scores = [score for _, score in next_scored_population]
         best_score = max(scores) if scores else 0.0
         summary = {
@@ -165,30 +131,18 @@ class GAPropagator:
             "population_size": len(next_scored_population)
         }
 
-        # 新しいSearchStateオブジェクトを生成して返す
         return SearchState(
             generation=search_state.generation + 1,
             scored_population=next_scored_population,
             summary=summary,
         )
 
-
-def new_ga_propagate_fn(elite_size: int) -> PropagateFn:
-    """
-    GAPropagatorを設定し、PropagateFnとして参照を返すファクトリ関数。
-    """
-    propagator = GAPropagator()
-    propagator.elite_size = elite_size
-    return propagator.propagate_fn
+    return propagate_fn
 
 
 # --- 実行エンジン (Execution Engine) ---
-
 class Orchestrator:
-    """
-    探索ループを駆動し、インメモリのSearchStateを一元管理する。
-    コンポーネントは外部から注入され、自身は状態を持たない。
-    """
+    """探索ループを駆動し、インメモリのSearchStateを一元管理する。"""
 
     def run(
         self,
@@ -199,25 +153,15 @@ class Orchestrator:
         max_generations: int,
         target_score: float,
     ):
-        """
-        探索プロセスを実行するメインループ。
-        Propose -> Observe -> Propagate のサイクルを回す。
-        """
+        """Propose -> Observe -> Propagate のサイクルで探索を実行する。"""
         print(f"--- 探索開始 (最大 {max_generations} 世代) ---")
         start_time = time.time()
-
         search_state = initial_search_state
 
         while search_state.generation < max_generations:
-            # 1. Propose: 新しい仮説(Queries)を生成
-            queries = propose_fn(search_state)
-
-            # 2. Observe: Queriesを評価し、Evidenceを得る
-            evidence = observe_fn(queries)
-
-            # 3. Propagate: Evidenceと現行状態から次世代のSearchStateを計算
-            #    Orchestratorは、返された新しい状態で自身の管理する状態を完全に置き換える。
-            search_state = propagate_fn(evidence, search_state)
+            query = propose_fn(search_state)
+            evidence = observe_fn(query)
+            search_state = propagate_fn(query, evidence, search_state)
 
             best_score = search_state.summary.get("best_score", 0.0)
             print(
@@ -239,11 +183,8 @@ class Orchestrator:
 
 
 def main_controller():
-    """
-    システムのライフサイクルを管理するControllerの役割を担う。
-    依存性を注入し、Orchestratorを実行する。
-    """
-    print("--- Generative Ansatz Search (GAS) PoC (New Design) ---")
+    """システムのライフサイクルを管理し、依存性を注入してOrchestratorを実行する。"""
+    print("--- Generative Ansatz Search (GAS) PoC ---")
 
     # --- 環境設定 (Hyperparameters) ---
     gene_length = 100
@@ -255,7 +196,6 @@ def main_controller():
     crossover_rate = 0.9
 
     # --- 依存性の注入 (Dependency Injection) ---
-    # ファクトリ関数を呼び出し、設定済みの各コンポーネント(関数)を取得
     propose = new_ga_propose_fn(
         gene_length=gene_length,
         population_size=population_size,
