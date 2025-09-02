@@ -2,89 +2,86 @@ import random
 import time
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Any, Tuple, List, Callable, Optional, Protocol
+from typing import Dict, Any, Tuple, List, Callable
 import numpy as np
 import matplotlib.pyplot as plt
 
 # ==============================================================================
-# 1. Core Data Structures & Protocols (GAS Framework Specification)
+# 1. Core Data Structures (GAS Framework Specification)
 # ==============================================================================
 
 # --- データ構造 ---
-type Individual = np.ndarray
-type StrategyState = Any  # 今回は使用しないが、フレームワークの規約として定義
+Ansatz = np.ndarray
+Queries = List[Ansatz]
 
 
 @dataclass
-class ScoredIndividual:
-    """個体、スコア、およびNSGA-IIに固有の属性を保持するデータクラス"""
-    individual: Individual
+class ScoredAnsatz:
+    """
+    個体、スコア、およびNSGA-IIに固有の属性を保持するデータクラス。
+    NOTE: NSGA-IIのソートアルゴリズムの都合上、このクラスは可変(mutable)としています。
+    """
+    ansatz: Ansatz
     scores: Tuple[float, ...]
     rank: int = -1
     crowding_distance: float = 0.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class SearchState:
-    """探索プロセスの全状態を保持する"""
+    """
+    探索プロセスの全状態を保持する不変(immutable)なデータクラス (Originator)。
+    """
     generation: int
-    scored_population: List[ScoredIndividual] = field(default_factory=list)
+    scored_population: List[ScoredAnsatz] = field(default_factory=list)
     summary: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class Evidence:
-    """EvaluateFnが返す評価結果"""
-    newly_scored: List[ScoredIndividual]
+    """ObserveFnが返す評価結果"""
+    newly_scored: List[ScoredAnsatz]
 
 
-# --- コンポーネントのインターフェース定義 ---
-type GenerateFn = Callable[[SearchState], List[Individual]]
-type EvaluateFn = Callable[[List[Individual]], Evidence]
-
-
-class Strategy(Protocol):
-    """Strategyが準拠すべきプロトコル"""
-
-    def init(self, strategy_state: StrategyState) -> None:
-        """戦略の内部状態を初期化する (今回は未使用)"""
-        ...
-
-    def step(self, evidence: Evidence, search_state: SearchState) -> Dict[str, Any]:
-        """評価結果と現在の探索状態に基づき、状態の更新内容(updates)を計算する"""
-        ...
+# --- コア関数のインターフェース定義 ---
+ProposeFn = Callable[[SearchState], Queries]
+ObserveFn = Callable[[Queries], Evidence]
+PropagateFn = Callable[[Evidence, SearchState], SearchState]
 
 
 # ==============================================================================
 # 2. Component Implementations
 # ==============================================================================
-def new_zdt1_evaluate_fn(n_vars: int) -> EvaluateFn:
+
+# --- II. ObserveFn: 仮説評価器 ---
+def new_zdt1_observe_fn(n_vars: int) -> ObserveFn:
     """
-    GAS: EvaluateFn Factory
-    ZDT1問題の評価関数を生成するファクトリー。
+    GAS: ObserveFn Factory
+    ZDT1問題の評価関数を生成する。
     """
-    def zdt1(x: Individual) -> Tuple[float, float]:
+    def zdt1(x: Ansatz) -> Tuple[float, float]:
         """ZDT1 目的関数 (最小化)"""
         if len(x) != n_vars:
             raise ValueError(
-                f"Invalid individual length. Expected {n_vars}, got {len(x)}.")
+                f"Invalid ansatz length. Expected {n_vars}, got {len(x)}.")
         f1 = x[0]
         g = 1.0 + (9.0 / (n_vars - 1.0)) * np.sum(x[1:])
         h = 1.0 - math.sqrt(max(0.0, f1 / g))
         f2 = g * h
         return float(f1), float(f2)
 
-    def evaluate_fn(candidates: List[Individual]) -> Evidence:
+    def observe_fn(queries: Queries) -> Evidence:
         """候補個体群をZDT1で評価し、Evidenceオブジェクトを返す"""
-        newly_scored = [ScoredIndividual(
-            ind, scores=zdt1(ind)) for ind in candidates]
+        newly_scored = [ScoredAnsatz(
+            ansatz=ind, scores=zdt1(ind)) for ind in queries]
         return Evidence(newly_scored=newly_scored)
-    return evaluate_fn
+    return observe_fn
 
 
-class NSGAGenerator:
+# --- I. ProposeFn: 仮説生成器 ---
+class NSGAProposer:
     """
-    GAS: Generator Logic
+    GAS: Proposer Logic
     現状態から新しい候補個体群(子個体群)を生成するロジックをカプセル化。
     """
     population_size: int
@@ -96,16 +93,15 @@ class NSGAGenerator:
     lower_bound: float
     upper_bound: float
 
-    def _tournament_selection(self, population: List[ScoredIndividual]) -> ScoredIndividual:
-        """バイナリトーナメント選択 (復元抽出)"""
-        # NOTE: GAではエリートが何度も選ばれることに問題はないため復元抽出でよく変更禁止
+    def _tournament_selection(self, population: List[ScoredAnsatz]) -> ScoredAnsatz:
+        """バイナリトーナメント選択"""
         p1 = random.choice(population)
         p2 = random.choice(population)
         if (p1.rank, -p1.crowding_distance) < (p2.rank, -p2.crowding_distance):
             return p1
         return p2
 
-    def _sbx_crossover(self, p1: Individual, p2: Individual) -> Tuple[Individual, Individual]:
+    def _sbx_crossover(self, p1: Ansatz, p2: Ansatz) -> Tuple[Ansatz, Ansatz]:
         """Simulated Binary Crossover (SBX)"""
         c1, c2 = p1.copy(), p2.copy()
         if random.random() > self.crossover_rate:
@@ -119,7 +115,7 @@ class NSGAGenerator:
             c2[i] = 0.5 * ((1.0 - beta) * p1_val + (1.0 + beta) * p2_val)
         return np.clip(c1, self.lower_bound, self.upper_bound), np.clip(c2, self.lower_bound, self.upper_bound)
 
-    def _polynomial_mutation(self, ind: Individual) -> Individual:
+    def _polynomial_mutation(self, ind: Ansatz) -> Ansatz:
         """多項式突然変異"""
         mutated_ind = ind.copy()
         range_width = self.upper_bound - self.lower_bound
@@ -143,8 +139,8 @@ class NSGAGenerator:
                 mutated_ind[i] = x + delta_q * range_width
         return np.clip(mutated_ind, self.lower_bound, self.upper_bound)
 
-    def generate_next_population(self, search_state: SearchState) -> List[Individual]:
-        """GenerateFnの本体。探索状態に応じて次世代の候補を生成する。"""
+    def propose_fn(self, search_state: SearchState) -> Queries:
+        """ProposeFnの本体。探索状態に応じて次世代の候補を生成する。"""
         if search_state.generation == 0:
             return [np.random.uniform(self.lower_bound, self.upper_bound, self.n_vars) for _ in range(self.population_size)]
 
@@ -154,39 +150,36 @@ class NSGAGenerator:
             parent1 = self._tournament_selection(population)
             parent2 = self._tournament_selection(population)
             child1, child2 = self._sbx_crossover(
-                parent1.individual, parent2.individual)
+                parent1.ansatz, parent2.ansatz)
             offspring.append(self._polynomial_mutation(child1))
             if len(offspring) < self.population_size:
                 offspring.append(self._polynomial_mutation(child2))
         return offspring
 
 
-def new_nsga_generate_fn(population_size: int, n_vars: int, crossover_rate: float, mutation_rate: float, eta_c: float, eta_m: float, bounds: Tuple[float, float]) -> GenerateFn:
+def new_nsga_propose_fn(population_size: int, n_vars: int, crossover_rate: float, mutation_rate: float, eta_c: float, eta_m: float, bounds: Tuple[float, float]) -> ProposeFn:
     """
-    GAS: GenerateFn Factory
-    NSGAGeneratorのインスタンスを生成し、GenerateFnとして利用可能な関数を返す。
+    GAS: ProposeFn Factory
+    NSGAProposerのインスタンスを生成し、ProposeFnとして利用可能な関数を返す。
     """
-    gen = NSGAGenerator()
-    gen.population_size, gen.n_vars = population_size, n_vars
-    gen.crossover_rate, gen.mutation_rate = crossover_rate, mutation_rate
-    gen.eta_c, gen.eta_m = eta_c, eta_m
-    gen.lower_bound, gen.upper_bound = bounds
-    return gen.generate_next_population
+    proposer = NSGAProposer()
+    proposer.population_size, proposer.n_vars = population_size, n_vars
+    proposer.crossover_rate, proposer.mutation_rate = crossover_rate, mutation_rate
+    proposer.eta_c, proposer.eta_m = eta_c, eta_m
+    proposer.lower_bound, proposer.upper_bound = bounds
+    return proposer.propose_fn
 
 
-class NSGAStrategy:
+# --- III. PropagateFn: 更新戦略 ---
+class NSGAPropagator:
     """
-    GAS: Strategy
+    GAS: Propagator Logic
     NSGA-IIの環境選択アルゴリズムを実装。ステートレスな更新ロジックを提供する。
     """
     population_size: int
 
-    def init(self, strategy_state: StrategyState) -> None:
-        pass  # NSGA-IIのStrategyは状態を持たないため、何もしない
-
     def _dominates(self, scores1: Tuple[float, ...], scores2: Tuple[float, ...]) -> bool:
         """優越関係を判定する (最小化問題)"""
-        # NOTE: anyやallを使うと遅くなるのであえて単純なforループしてあり変更禁止
         better_in_at_least_one = False
         for s1, s2 in zip(scores1, scores2):
             if s1 > s2:
@@ -195,14 +188,11 @@ class NSGAStrategy:
                 better_in_at_least_one = True
         return better_in_at_least_one
 
-    def _fast_non_dominated_sort(self, population: List[ScoredIndividual]) -> List[List[ScoredIndividual]]:
+    def _fast_non_dominated_sort(self, population: List[ScoredAnsatz]) -> List[List[ScoredAnsatz]]:
         """高速非劣等ソート"""
-        fronts: List[List[ScoredIndividual]] = [[]]
+        fronts: List[List[ScoredAnsatz]] = [[]]
         S = [[] for _ in range(len(population))]
         n = [0] * len(population)
-
-        # NOTE: 以下のpop_mapはパフォーマンスとロジックの正確性のために不可欠です。
-        # 高速なインデックス検索を実現しています。この行は変更しないでください。
         pop_map = {id(p): i for i, p in enumerate(population)}
 
         for i, p in enumerate(population):
@@ -222,7 +212,6 @@ class NSGAStrategy:
         while fronts[i]:
             next_front = []
             for p in fronts[i]:
-                # NOTE: pop_mapを使用してください
                 p_idx = pop_map[id(p)]
                 for q_idx in S[p_idx]:
                     n[q_idx] -= 1
@@ -237,7 +226,7 @@ class NSGAStrategy:
                 break
         return fronts
 
-    def _calculate_crowding_distance(self, front: List[ScoredIndividual]):
+    def _calculate_crowding_distance(self, front: List[ScoredAnsatz]):
         """混雑度距離を計算"""
         if not front:
             return
@@ -256,10 +245,9 @@ class NSGAStrategy:
                 front[i].crowding_distance += (front[i+1].scores[m] -
                                                front[i-1].scores[m]) / range_m
 
-    def step(self, evidence: Evidence, search_state: SearchState) -> Dict[str, Any]:
+    def propagate_fn(self, evidence: Evidence, search_state: SearchState) -> SearchState:
         """
-        評価結果と現在の探索状態から、次世代の状態への更新内容(updates)を計算する。
-        このメソッドはステートレスであり、内部状態を変更しない。
+        評価結果と現在の探索状態から、次世代の新しいSearchStateオブジェクトを生成して返す。
         """
         combined_pop = search_state.scored_population + evidence.newly_scored
         fronts = self._fast_non_dominated_sort(combined_pop)
@@ -284,21 +272,21 @@ class NSGAStrategy:
             "pareto_front_size": len(pareto_front),
             "pareto_front_scores": [p.scores for p in pareto_front]
         }
-        return {
-            "scored_population": next_population,
-            "generation": search_state.generation + 1,
-            "summary": summary,
-        }
+        return SearchState(
+            generation=search_state.generation + 1,
+            scored_population=next_population,
+            summary=summary,
+        )
 
 
-def new_nsga_strategy(population_size: int) -> Strategy:
+def new_nsga_propagate_fn(population_size: int) -> PropagateFn:
     """
-    GAS: Strategy Factory
-    NSGAStrategyのインスタンスを生成する。
+    GAS: PropagateFn Factory
+    NSGAPropagatorのインスタンスを生成し、PropagateFnとして利用可能な関数を返す。
     """
-    strategy = NSGAStrategy()
-    strategy.population_size = population_size
-    return strategy
+    propagator = NSGAPropagator()
+    propagator.population_size = population_size
+    return propagator.propagate_fn
 
 
 # ==============================================================================
@@ -310,36 +298,30 @@ class Orchestrator:
     探索ループ全体を管理し、状態の更新を一元的に担う実行エンジン。
     """
 
-    def _apply_updates(self, search_state: SearchState, updates: Dict[str, Any]):
-        """Strategyが計算した更新内容をSearchStateに適用する"""
-        for key, value in updates.items():
-            setattr(search_state, key, value)
-
-    def run(self, generate_fn: GenerateFn, evaluate_fn: EvaluateFn, strategy: Strategy, search_state: SearchState, max_generations: int):
+    def run(self, propose_fn: ProposeFn, observe_fn: ObserveFn, propagate_fn: PropagateFn,
+            initial_search_state: SearchState, max_generations: int) -> List[Dict[str, Any]]:
         """探索プロセスを実行する"""
         print(f"--- 探索開始 (最大 {max_generations} 世代) ---")
         start_time = time.time()
         history = []
-        strategy.init(None)  # StrategyStateを初期化 (今回は未使用)
+        search_state = initial_search_state
 
         while search_state.generation < max_generations:
-            # 1. Generate: 新しい仮説(Candidates)を生成
-            candidates = generate_fn(search_state)
+            # 1. Propose: 新しい仮説(Queries)を生成
+            queries = propose_fn(search_state)
 
-            # 2. Evaluate: Candidatesを評価し、Evidenceを得る
-            evidence = evaluate_fn(candidates)
+            # 2. Observe: Queriesを評価し、Evidenceを得る
+            evidence = observe_fn(queries)
 
-            # 3. Step: Strategyが更新内容(updates)を計算
-            updates = strategy.step(evidence, search_state)
-
-            # 4. Apply: Orchestratorが状態を更新
-            self._apply_updates(search_state, updates)
+            # 3. Propagate: 次世代のSearchStateを計算
+            search_state = propagate_fn(evidence, search_state)
 
             # --- ログと履歴の記録 ---
-            history.append(search_state.summary.copy())
+            history.append(search_state.summary)
             if search_state.generation % 10 == 0 or search_state.generation == max_generations:
                 print(
-                    f"世代: {search_state.generation:03d} | パレートフロントサイズ: {search_state.summary.get('pareto_front_size', 0)}")
+                    f"世代: {search_state.generation:03d} | "
+                    f"パレートフロントサイズ: {search_state.summary.get('pareto_front_size', 0)}")
 
         end_time = time.time()
         print(f"\n--- 探索終了 ---")
@@ -387,7 +369,7 @@ def main_controller():
     GAS: Controller
     依存性を注入し、Orchestratorを介して探索プロセス全体を開始・管理する。
     """
-    print("--- GAS PoC: NSGA-II on ZDT1 (Refactored) ---")
+    print("--- GAS PoC: NSGA-II on ZDT1 (New Design) ---")
     CONFIG = {
         "N_VARS": 30, "BOUNDS": (0.0, 1.0), "POPULATION_SIZE": 100,
         "MAX_GENERATIONS": 500, "CROSSOVER_RATE": 0.9,
@@ -398,22 +380,23 @@ def main_controller():
     np.random.seed(CONFIG["SEED"])
 
     # --- 依存性の注入 (Dependency Injection) ---
-    evaluate_fn = new_zdt1_evaluate_fn(n_vars=CONFIG["N_VARS"])
-    generate_fn = new_nsga_generate_fn(
+    observe = new_zdt1_observe_fn(n_vars=CONFIG["N_VARS"])
+    propose = new_nsga_propose_fn(
         population_size=CONFIG["POPULATION_SIZE"], n_vars=CONFIG["N_VARS"],
         crossover_rate=CONFIG["CROSSOVER_RATE"], mutation_rate=CONFIG["MUTATION_RATE"],
         eta_c=CONFIG["ETA_C"], eta_m=CONFIG["ETA_M"], bounds=CONFIG["BOUNDS"]
     )
-    strategy = new_nsga_strategy(population_size=CONFIG["POPULATION_SIZE"])
+    propagate = new_nsga_propagate_fn(
+        population_size=CONFIG["POPULATION_SIZE"])
     orchestrator = Orchestrator()
     initial_state = SearchState(generation=0)
 
     # --- 実行 ---
     history = orchestrator.run(
-        generate_fn=generate_fn,
-        evaluate_fn=evaluate_fn,
-        strategy=strategy,
-        search_state=initial_state,
+        propose_fn=propose,
+        observe_fn=observe,
+        propagate_fn=propagate,
+        initial_search_state=initial_state,
         max_generations=CONFIG["MAX_GENERATIONS"]
     )
 

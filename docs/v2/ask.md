@@ -1,0 +1,413 @@
+<設計仕様書-西村が提案>
+# 導入
+
+最近LLMを用いた解の発見が流行っている、Alpha EvolveやDeep Researcher with Test-Time Diffusionなどがgoogleによって開発され、大成功を収めている。
+
+このような手法のうち、化学・物理モデルの発見に特化したものの開発に取り組んでいる。
+
+# Abstract
+
+化学・物理モデルの発見では、データセットに適合する数式や微分方程式を構成することが目的である。
+
+機械学習でブラックボックスモデルを構築することも可能だが、そうではなく、解釈可能な理論式を見つけたい。
+
+データや理論値とのフィッティング度合いなどはある程度決定的に測れる。しかし、化学方程式の妥当性や微分方程式の近似解の発見など、計算精度だけが指標でない場合も多い。オッカムの剃刀の原則に則ったモデルのコンパクトさ（記述長）もまた、主要な指標となりうる。
+
+先行研究で考案されている手法も様々であり、本稿では、できるだけ広いカバー範囲を持つフレームワークの構想を行う。
+
+# フレームワーク設計案: Generative Ansatz Search (GAS)
+
+様々な問題や探索手法に対応可能な、拡張性の高いモジュール式アーキテクチャを提案する。中核となる探索プロセスはストラテジーパターンを採用し、探索アルゴリズムの交換を容易にする。GASは、責務の異なる4つのサービスから構成される。
+
+### I. Command Service: 探索プロセスの実行
+
+仮説生成と評価のサイクルを駆動し、解を探索するメインサービス。`asyncio`を活用し、`Strategy`のLLM API呼び出しや`ObserveFn`のGPU計算といったI/Oバウンドなタスクを効率的に処理する。
+
+  * **`Controller` (システムのライフサイクル管理)**
+
+      * **役割**: 探索プロセスのライフサイクル（開始、再開、中断、終了）と、状態永続化のタイミング（ポリシー）を管理する。
+      * **実装**: 実行構成を準備する。`Repository`を介して`Queries`と`StrategyState`を初期化（新規作成またはDBから復元）する。初回実行時には`Strategy.init`を呼び出し、初期`StrategyState`を生成する。これらのコンポーネントと状態を`Orchestrator`に渡し、探索を開始させる。定義されたポリシーに基づき`Repository`へ永続化を指示する。
+
+  * **`Orchestrator` (実行エンジン)**
+
+      * **役割**: 探索ループを駆動し、`Queries`（評価対象の仮説群）と`StrategyState`（戦略の内部状態）という2つの状態を一元管理する。
+      * **実装**: 以下の探索サイクルを駆動する。
+        1.  `ObserveFn`を呼び出し、現在の`Queries`を評価して `Evidence` を得る。
+        2.  `Strategy.update`を呼び出し、`Evidence`、現在の`StrategyState`、現在の`Queries`に基づき、`Queries`への更新内容 `updates` と、新しい `StrategyState` を計算する。
+        3.  計算された`updates`を`Queries`に適用し、次のループで評価される新しい`Queries`を生成する。同時に`StrategyState`を更新する。
+            このループにより、`Orchestrator`は状態管理の責務を集約する。
+
+  * **`ObserveFn` (仮説評価器)**
+
+      * **役割**: 与えられた仮説群 `Queries` の有効性を評価する。
+      * **実装**: `Orchestrator`から`Queries`を受け取り、定量的・定性的評価を実行する。`Strategy`が必要とする形式の評価結果 `Evidence` を計算し、`Orchestrator`に返す。状態の読み書きは行わないステートレスな関数である。
+
+  * **`Strategy` (探索戦略)**
+
+      * **役割**: `optax`における`optimizer`に相当する、探索アルゴリズムの中核。評価結果(`Evidence`)に基づき、次の`Queries`を生成するための更新内容(`Propose`)と、アルゴリズムの次状態を計算(`Propagate`)する。
+  
+      * **実装**: `init`と`update`というステートレスなメソッドを提供する。
+          * `init`: `StrategyState`を初期化する。
+          * `update`: `Evidence`、`StrategyState`、`Queries`を入力として受け取り、更新内容 `updates` と新しい `new_strategy_state` を返す (`updates, new_strategy_state = strategy.update(evidence, strategy_state, queries)`)。
+          * 例えば`propose`では、ExplorationとExploitationのバランス管理をおこなう場合がある。
+  
+  * **`Queries` (仮説群/探索状態)**
+
+      * **役割**: `optax`における`params`に相当する、探索プロセスの主要な状態。現在評価・更新の対象となっている仮説（Ansatz）の集合。
+      * **実装**: 探索セッションの「現在の解」をカプセル化する。自身の状態をスナップショット化する`Memento`オブジェクトを生成、または`Memento`から状態を復元するインターフェースを提供し、永続化ロジックから分離されている (Originatorパターン)。
+
+  * **`StrategyState` (戦略状態)**
+
+      * **役割**: `optax`における`opt_state`に相当する、探索アルゴリズム固有の内部状態を保持する。例えば、MCTSにおける探索木の状態、進化計算における世代数や過去の優れた個体群、最適化アルゴリズムのモーメンタムなどが含まれる。
+      * **実装**: `Strategy`によって定義され、`Orchestrator`によって管理される状態オブジェクト。自身の状態をスナップショット化する`Memento`オブジェクトを生成、または`Memento`から状態を復元するインターフェースを提供する (Originatorパターン)。
+
+  * **`Repository` (永続化層)**
+
+      * **役割**: 探索セッション全体の状態（`Queries`と`StrategyState`）の永続化の**メカニズム**に特化する。
+      * **実装**: `Controller`の指示に基づき、`Queries`と`StrategyState`からそれぞれの`Memento`を取得する。これらを単一のトランザクション内でデータベースが扱いやすい形式にシリアライズして永続化する。逆に、データベースからデータを読み込み、それぞれの`Memento`を介して各状態オブジェクトを復元する責務を持つ (Caretakerパターン)。
+
+  * **`Memento` (状態スナップショット)**
+
+      * **役割**: `Queries`や`StrategyState`といった、特定の状態オブジェクトの内部状態を保持するデータ転送オブジェクト(DTO)。
+      * **実装**: 状態を保持するためのフィールドのみで構成され、ビジネスロジックは持たない。状態オブジェクトと`Repository`間の状態の受け渡しに用いられる。
+
+### II. Projection Service: データの変換・転送
+
+`Repository`が保存した状態データを、分析しやすい形式（例: テーブル形式）に変換し、外部の分析基盤やデータウェアハウスへ転送するサービス。
+
+### III. Query Service: 状態の照会・可視化
+
+`Projection Service`によって変換されたデータに対し、人間が直接クエリを発行し、探索の進捗や結果を可視化・分析するためのAPIバックエンド。
+
+### IV. UI Service: ユーザーインターフェース
+
+`Command Service`にリクエストを送信して探索を実行・管理し、`Query Service`を呼び出して結果を可視化・分析するためのWebアプリケーションやCLI。
+
+# C4 Model
+
+## Level 1: System Context Diagram (システムコンテキスト図)
+
+```mermaid
+C4Context
+    title Level 1: System Context Diagram for GAS (Generative Ansatz Search)
+
+    Person(researcher, "研究者", "化学・物理モデルの発見に取り組むユーザー")
+
+    System(gas, "GAS Framework", "データセットに適合する数式や理論モデルを発見するフレームワーク")
+
+    System_Ext(llm, "LLM (基盤モデル)", "仮説の生成や定性的な評価に使用される (e.g., Gemini, GPT-4)")
+    System_Ext(external_analysis, "外部分析基盤 (任意)", "探索結果の詳細分析や長期保存のための外部プラットフォーム")
+
+    Rel(researcher, gas, "利用", "探索の実行、結果の分析")
+    Rel(gas, llm, "利用", "API経由での仮説生成・評価")
+    Rel(gas, external_analysis, "連携", "探索データの転送")
+
+    UpdateLayoutConfig($c4ShapeInRow="1")
+```
+
+## Level 2: Container Diagram (コンテナ図)
+
+```mermaid
+C4Container
+    title Level 2: Container Diagram for GAS
+
+    Person(researcher, "研究者")
+    System_Ext(llm, "LLM (基盤モデル)")
+    System_Ext(external_analysis, "外部分析基盤 (任意)")
+
+    System_Boundary(gas, "GAS Framework") {
+        Container(ui_service, "IV. UI Service", "Web Application/CLI", "ユーザーインターフェースを提供。")
+        Container(command_service, "I. Command Service", "Backend Service/Worker", "探索プロセスの実行を担うメインサービス。")
+        Container(projection_service, "II. Projection Service", "Data Processing Service", "状態データを分析形式に変換・転送する。")
+        Container(query_service, "III. Query Service", "API Service", "分析データへのクエリと可視化を担う。")
+
+        ContainerDb(primary_db, "Primary Datastore", "Database (RDB/NoSQL)", "探索プロセスの全状態を中断・再開用に記録する。")
+        ContainerDb(analysis_db, "分析用DB", "Database (DWH/RDB)", "分析・可視化用に最適化されたデータストア。")
+    }
+
+    Rel(researcher, ui_service, "利用", "HTTPS/CLI")
+    Rel(ui_service, command_service, "探索リクエスト送信・制御", "API Call/Queue")
+    UpdateRelStyle(ui_service, command_service, $offsetY="-40")
+    Rel(ui_service, query_service, "結果照会リクエスト", "API Call")
+    UpdateRelStyle(ui_service, query_service, $offsetY="30", $offsetX="60")
+
+    Rel(command_service, primary_db, "読み書き", "状態の永続化・復元")
+    UpdateRelStyle(command_service, primary_db, $offsetY="40")
+    Rel(command_service, llm, "リクエスト", "仮説生成・評価依頼")
+    UpdateRelStyle(command_service, llm, $offsetX="-60", $offsetY="-20")
+
+    Rel(projection_service, primary_db, "読み込み", "状態データ取得")
+    UpdateRelStyle(projection_service, primary_db, $offsetX="-35", $offsetY="40")
+    Rel(projection_service, analysis_db, "書き込み", "変換データ保存")
+    Rel(projection_service, external_analysis, "転送 (任意)", "データ連携")
+    UpdateRelStyle(projection_service, external_analysis, $offsetY="-30")
+
+    Rel(query_service, analysis_db, "クエリ実行", "データ照会")
+    UpdateRelStyle(query_service, analysis_db, $offsetY="35")
+
+    UpdateLayoutConfig($c4ShapeInRow="3")
+```
+
+## Level 3: Component Diagram for Command Service
+
+```mermaid
+C4Component
+    title Level 3: Component Diagram for Command Service (New Design)
+
+    Container(ui_service, "IV. UI Service")
+    ContainerDb(primary_db, "Primary Datastore")
+    System_Ext(external_services, "External Services", "LLM, Solvers")
+
+    Container_Boundary(command_service, "I. Command Service") {
+
+        Component(controller, "Controller", "ライフサイクル管理", "探索プロセスの準備と永続化を指示")
+        Component(repository, "Repository", "永続化層", "DBとのデータI/Oを担当")
+        
+        Component(orchestrator, "Orchestrator", "実行エンジン", "探索ループを駆動し、2つの状態を管理")
+        
+        Component(queries, "Queries", "仮説群/探索状態", "現在評価・更新対象の仮説群")
+        Component(strategy_state, "StrategyState", "戦略状態", "アルゴリズム固有の内部状態")
+        
+        Component(ObserveFn, "ObserveFn", "仮説評価", "ステートレスな評価関数")
+        Component(strategy, "Strategy", "探索戦略", "仮説の生成と更新をカプセル化")
+    }
+    
+    %% --- Setup Flow (Orchestrated by Controller) ---
+    Rel(ui_service, controller, "1. 探索開始を要求")
+    Rel(controller, repository, "2. DBから全状態を復元 or 新規作成")
+    Rel(repository, primary_db, "R/W")
+    Rel(repository, queries, "準備")
+    Rel(repository, strategy_state, "準備")
+    Rel(controller, strategy, "3. StrategyStateを初期化 (初回実行時)", "init()")
+    Rel(controller, orchestrator, "4. 全コンポーネントと状態を渡し、探索開始")
+
+    %% --- Core Execution Loop (Managed by Orchestrator) ---
+    Rel(orchestrator, ObserveFn, "a. Queriesを評価 (結果はEvidence)")
+    Rel(ObserveFn, queries, "参照")
+    Rel(ObserveFn, external_services, "利用 (任意)")
+
+    Rel(orchestrator, strategy, "b. 更新内容を計算", "update(evidence, strategy_state, queries)")
+    Rel(strategy, strategy_state, "参照")
+    Rel(strategy, queries, "参照")
+
+    Rel(orchestrator, queries, "c. updatesを適用し、更新")
+    Rel(orchestrator, strategy_state, "d. new_stateで更新")
+    
+    UpdateLayoutConfig($c4ShapeInRow="3")
+```
+<設計仕様書-西村が提案/>
+
+<設計仕様書-山本が提案>
+# 導入
+
+最近LLMを用いた解の発見が流行っている、Alpha EvolveやDeep Researcher with Test-Time Diffusionなどがgoogleによって開発され、大成功を収めている。
+
+このような手法のうち、化学・物理モデルの発見に特化したものの開発に取り組んでいる。
+
+# Abstract
+
+化学・物理モデルの発見では、データセットに適合する数式や微分方程式を構成することが目的である。
+
+機械学習でブラックボックスモデルを構築することも可能だが、そうではなく、解釈可能な理論式を見つけたい。
+
+データや理論値とのフィッティング度合いなどはある程度決定的に測れる。しかし、化学方程式の妥当性や微分方程式の近似解の発見など、計算精度だけが指標でない場合も多い。オッカムの剃刀の原則に則ったモデルのコンパクトさ（記述長）もまた、主要な指標となりうる。
+
+先行研究で考案されている手法も様々であり、本稿では、できるだけ広いカバー範囲を持つフレームワークの構想を行う。
+
+# フレームワーク設計案: Generative Ansatz Search (GAS)
+
+様々な問題や探索手法に対応可能な、拡張性の高いモジュール式アーキテクチャを提案する。中核となる探索プロセスはストラテジーパターンを採用し、探索アルゴリズムの交換を容易にする。GASは、責務の異なる4つのサービスから構成される。
+
+### I. Command Service: 探索プロセスの実行
+
+仮説生成と評価のサイクルを駆動し、解を探索するメインサービス。`asyncio`を活用し、`ProposeFn`のLLM API呼び出しや`ObserveFn`のGPU計算といったI/Oバウンドなタスクを効率的に処理する。
+リアルタイムロギングは多分OrchestratorにQueueを注入すればいけるから、スムーズに拡張できると思うので、Coreができたら考える。
+
+* **`Controller` (システムのライフサイクル管理)**
+
+    * **役割**: 探索プロセスのライフサイクル（開始、再開、中断、終了）と、状態永続化のタイミング（ポリシー）を管理する。
+    * **実装**: 実行構成（使用するコンポーネント、ハイパーパラメータ等）を準備する。`Repository`を介して`SearchState`と`PropagatorState`を初期化（新規作成またはDBから復元）する。初回実行時には`Propagator.init`を呼び出し、初期`PropagatorState`を生成する。これらのコンポーネントと状態を`Orchestrator`に渡し、探索を開始させる。定義されたポリシーに基づき`Repository`へ永続化を指示する。
+
+* **`Orchestrator` (実行エンジン)**
+
+    * **役割**: 探索ループを駆動し、`SearchState`と`PropagatorState`という2つの状態を一元管理する。
+    * **実装**: 以下の探索サイクルを駆動する。
+      1.  `ProposeFn`を呼び出し、評価対象の仮説群 `Candidates` を生成する。
+      2.  `ObserveFn`を呼び出し、`Candidates`を評価して `Evidence` を得る。
+      3.  `Propagator.update`を呼び出し、`Evidence`、現在の`SearchState`、現在の`PropagatorState`に基づき、`SearchState`への更新内容 `updates` と、新しい `PropagatorState` を計算する。
+      4.  計算された`updates`を`SearchState`に適用し、`PropagatorState`を更新する。
+          このループにより、`Orchestrator`は状態管理の責務を集約し、他のコンポーネントのステートレス性を保証する。
+
+* **`ProposeFn` (仮説生成器)**
+
+    * **役割**: 検証可能な仮説（Ansatz）の集合 `Candidates` を生成する。
+    * **実装**: 現在の`SearchState`（例: 親となる個体群）を参照し、LLM等を活用して新たな`Candidates`を生成する。状態の読み書きは行わないステートレスな関数である。Exploration-Exploitation Propagator。
+
+* **`ObserveFn` (仮説評価器)**
+
+    * **役割**: 与えられた仮説群 `Candidates` の有効性を評価する。
+    * **実装**: `Orchestrator`から`Candidates`を受け取り、定量的・定性的評価を実行する。`Propagator`が必要とする形式の評価結果 `Evidence` を計算し、`Orchestrator`に返す。状態の読み書きは行わないステートレスな関数である。
+
+* **`Propagator` (更新戦略)**
+
+    * **役割**: `optax`における`optimizer`に相当する、ステートレスな関数の集合体。評価結果に基づき、次の状態への更新内容を計算する。
+    * **実装**: `init`と`update`というステートレスなメソッドを提供する。
+        * `init`: `PropagatorState`を初期化する。
+        * `update`: `Evidence`、`PropagatorState`、`SearchState`を入力として受け取り、更新内容 `updates` と新しい `new_propagator_state` を返す (`updates, new_propagator_state = propagator.update(evidence, propagator_state, search_state)`)。
+          `ProposeFn`や`ObserveFn`はI/Oバウンドな処理を含むため、`asyncio`による並列化が想定される。`Propagator`をステートレスに保つことは、状態管理を`Orchestrator`に集約させ、並列実行時の複雑さを軽減する上で極めて重要である。
+
+* **`SearchState` (探索状態)**
+
+    * **役割**: 探索プロセスの主要な状態（生成された全仮説、スコア、系統など）をインメモリで一元管理する。
+    * **実装**: 探索セッションの状態をカプセル化する。自身の状態をスナップショット化する`Memento`オブジェクトを生成、または`Memento`から状態を復元するインターフェースを提供し、永続化ロジックから分離されている (Originatorパターン)。
+
+* **`PropagatorState` (戦略状態)**
+    * **役割**: 探索アルゴリズム固有の状態を保持する。例えば、MCTSにおける各ノードの訪問回数や、進化計算における世代数、最適化アルゴリズムのモーメンタムなどが含まれる。
+    * **実装**: `Propagator`によって定義され、`Orchestrator`によって管理される状態オブジェクト。`SearchState`と同様に、自身の状態をスナップショット化する`Memento`オブジェクトを生成、または`Memento`から状態を復元するインターフェースを提供する。
+
+* **`Repository` (永続化層)**
+    * **役割**: 探索セッション全体の状態（`SearchState`と`PropagatorState`）の永続化の**メカニズム**に特化する。
+    * **実装**: `Controller`の指示に基づき、`SearchState`と`PropagatorState`からそれぞれの`Memento`を取得する。これらを単一のトランザクション内でデータベースが扱いやすい形式にシリアライズして永続化する。逆に、データベースからデータを読み込み、それぞれの`Memento`を介して各状態オブジェクトを復元する責務を持つ (Caretakerパターン)。
+
+* **`Memento` (状態スナップショット)**
+    * **役割**: `SearchState`や`PropagatorState`といった、特定の状態オブジェクトの内部状態を保持するデータ転送オブジェクト(DTO)。
+    * **実装**: 状態を保持するためのフィールドのみで構成され、ビジネスロジックは持たない。状態オブジェクトと`Repository`間の状態の受け渡しに用いられる。`Repository`は複数の`Memento`を扱うことで、セッション全体の永続化を実現する。
+
+### II. Projection Service: データの変換・転送
+
+`Repository`が保存した状態データを、分析しやすい形式（例: テーブル形式）に変換し、外部の分析基盤やデータウェアハウスへ転送するサービス。
+
+### III. Query Service: 状態の照会・可視化
+
+`Projection Service`によって変換されたデータに対し、人間が直接クエリを発行し、探索の進捗や結果を可視化・分析するためのAPIバックエンド。
+
+### IV. UI Service: ユーザーインターフェース
+
+`Command Service`にリクエストを送信して探索を実行・管理し、`Query Service`を呼び出して結果を可視化・分析するためのWebアプリケーションやCLI。
+
+# C4 Model
+
+## Level 1: System Context Diagram (システムコンテキスト図)
+
+GASシステム全体の俯瞰図。システムがユーザー（研究者）や主要な外部システム（LLM、外部分析基盤）とどのように関わるかを示す。
+
+```mermaid
+C4Context
+    title Level 1: System Context Diagram for GAS (Generative Ansatz Search)
+
+    Person(researcher, "研究者", "化学・物理モデルの発見に取り組むユーザー")
+
+    System(gas, "GAS Framework", "データセットに適合する数式や理論モデルを発見するフレームワーク")
+
+    System_Ext(llm, "LLM (基盤モデル)", "仮説の生成や定性的な評価に使用される (e.g., Gemini, GPT-4)")
+    System_Ext(external_analysis, "外部分析基盤 (任意)", "探索結果の詳細分析や長期保存のための外部プラットフォーム")
+
+    Rel(researcher, gas, "利用", "探索の実行、結果の分析")
+    Rel(gas, llm, "利用", "API経由での仮説生成・評価")
+    Rel(gas, external_analysis, "連携", "探索データの転送")
+
+    UpdateLayoutConfig($c4ShapeInRow="1")
+```
+
+## Level 2: Container Diagram (コンテナ図)
+
+GASシステムを構成する主要な実行単位（コンテナ）を示す。設計案の4つのサービスとデータストアをコンテナとして定義している。
+
+```mermaid
+C4Container
+    title Level 2: Container Diagram for GAS
+
+    Person(researcher, "研究者")
+    System_Ext(llm, "LLM (基盤モデル)")
+    System_Ext(external_analysis, "外部分析基盤 (任意)")
+
+    System_Boundary(gas, "GAS Framework") {
+        Container(ui_service, "IV. UI Service", "Web Application/CLI", "ユーザーインターフェースを提供。")
+        Container(command_service, "I. Command Service", "Backend Service/Worker", "探索プロセスの実行を担うメインサービス。")
+        Container(projection_service, "II. Projection Service", "Data Processing Service", "状態データを分析形式に変換・転送する。")
+        Container(query_service, "III. Query Service", "API Service", "分析データへのクエリと可視化を担う。")
+
+        ContainerDb(primary_db, "Primary Datastore", "Database (RDB/NoSQL)", "探索プロセスの全状態（SearchState, PropagatorState）を中断・再開用に記録する。")
+        ContainerDb(analysis_db, "分析用DB", "Database (DWH/RDB)", "分析・可視化用に最適化されたデータストア。")
+    }
+
+    Rel(researcher, ui_service, "利用", "HTTPS/CLI")
+    Rel(ui_service, command_service, "探索リクエスト送信・制御", "API Call/Queue")
+    UpdateRelStyle(ui_service, command_service, $offsetY="-40")
+    Rel(ui_service, query_service, "結果照会リクエスト", "API Call")
+    UpdateRelStyle(ui_service, query_service, $offsetY="30", $offsetX="60")
+
+    Rel(command_service, primary_db, "読み書き", "状態の永続化・復元")
+    UpdateRelStyle(command_service, primary_db, $offsetY="40")
+    Rel(command_service, llm, "リクエスト", "仮説生成・評価依頼")
+    UpdateRelStyle(command_service, llm, $offsetX="-60", $offsetY="-20")
+
+    Rel(projection_service, primary_db, "読み込み", "状態データ取得")
+    UpdateRelStyle(projection_service, primary_db, $offsetX="-35", $offsetY="40")
+    Rel(projection_service, analysis_db, "書き込み", "変換データ保存")
+    Rel(projection_service, external_analysis, "転送 (任意)", "データ連携")
+    UpdateRelStyle(projection_service, external_analysis, $offsetY="-30")
+
+    Rel(query_service, analysis_db, "クエリ実行", "データ照会")
+    UpdateRelStyle(query_service, analysis_db, $offsetY="35")
+
+    UpdateLayoutConfig($c4ShapeInRow="3")
+```
+
+## Level 3: Component Diagram for Command Service
+
+「I. Command Service」コンテナ内部のコンポーネント間の連携を示す。ステートレスなコンポーネントと、`Orchestrator`による状態管理のフローを明確化している。
+
+```mermaid
+C4Component
+    title Level 3: Component Diagram for Command Service
+
+    Container(ui_service, "IV. UI Service")
+    ContainerDb(primary_db, "Primary Datastore")
+    System_Ext(external_services, "External Services", "LLM, Solvers")
+
+    Container_Boundary(command_service, "I. Command Service") {
+
+        Component(controller, "Controller", "ライフサイクル管理", "探索プロセスの準備と永続化を指示")
+        Component(repository, "Repository", "永続化層", "DBとのデータI/Oを担当")
+        
+        Component(orchestrator, "Orchestrator", "実行エンジン", "探索ループを駆動し、2つの状態を管理")
+        
+        Component(search_state, "SearchState", "探索状態", "仮説、スコア、系統など")
+        Component(propagator_state, "PropagatorState", "戦略状態", "アルゴリズム固有の状態")
+        
+        Component(ProposeFn, "ProposeFn", "仮説生成", "ステートレスな関数")
+        Component(ObserveFn, "ObserveFn", "仮説評価", "ステートレスな関数")
+        Component(propagator, "Propagator", "更新戦略", "ステートレスな更新関数 (init, update)")
+    }
+    
+    %% --- Setup Flow (Orchestrated by Controller) ---
+    Rel(ui_service, controller, "1. 探索開始を要求")
+    Rel(controller, repository, "2. DBから全状態を復元 or 新規作成")
+    Rel(repository, primary_db, "R/W")
+    Rel(repository, search_state, "準備")
+    Rel(repository, propagator_state, "準備")
+    Rel(controller, propagator, "3. PropagatorStateを初期化 (初回実行時)", "init()")
+    Rel(controller, orchestrator, "4. 全コンポーネントと状態を渡し、探索開始")
+
+    %% --- Core Execution Loop (Managed by Orchestrator) ---
+    Rel(orchestrator, ProposeFn, "a. Candidates生成を指示")
+    Rel(ProposeFn, search_state, "参照")
+
+    Rel(orchestrator, ObserveFn, "b. 評価を指示 (結果はEvidence)")
+    Rel(ObserveFn, external_services, "利用 (任意)")
+
+    Rel(orchestrator, propagator, "c. 更新内容を計算", "update(evidence, propagator_state, search_state)")
+    Rel(propagator, search_state, "参照")
+    Rel(propagator, propagator_state, "参照")
+
+    Rel(orchestrator, search_state, "d. updatesを適用")
+    Rel(orchestrator, propagator_state, "e. new_stateで更新")
+    
+    UpdateLayoutConfig($c4ShapeInRow="3")
+```
+<設計仕様書-山本が提案/>
+
+<Question>
+西村さんの設計と山本さんの設計、どちらが優れているか判断を下してください。
+<Question/>
