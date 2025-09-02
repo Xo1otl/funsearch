@@ -28,5 +28,3 @@ EXPOSE 7860
 
 # Run the Gradio application
 CMD ["uv", "run", "python", "ui/main.py"]
-
-# ちゃんとビルドが走るか確認するための変更
