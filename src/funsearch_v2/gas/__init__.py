@@ -1,22 +1,31 @@
-from typing import Protocol, Callable
+from typing import Callable, Tuple, Awaitable
 
 # --- Strategy定義 ---
-# NOTE: Python 3.12以降で利用可能なGenericsの文法(PEP 695)を使用(Rust/Go/TSどれもがTypeVarを用いないためTypeVar不要)
-type ProposeFn[SearchState, Query] = Callable[[SearchState], Query]
-type ObserveFn[Evidence, Query] = Callable[[Query], Evidence]
-type PropagateFn[Query, Evidence, SearchState] = \
-    Callable[[Query, Evidence, SearchState], SearchState]
+# NOTE: Python 3.12以降で利用可能なGenericsの文法(PEP 695)を使用
+type ProposeFn[SearchState, Query, Context] = \
+    Callable[[SearchState], Awaitable[Tuple[Query, Context]]]
+type ObserveFn[Query, Evidence] = Callable[[Query], Awaitable[Evidence]]
+type PropagateFn[SearchState, Query, Context, Evidence] = \
+    Callable[[SearchState, Query, Context, Evidence], SearchState]
+type TerminationStrategy[SearchState] = Callable[[SearchState], bool]
+
+type OrchestrateFn[SearchState] = \
+    Callable[[], Awaitable[SearchState]]
 
 
-class Orchestrator[SearchState](Protocol):
-    """探索プロセスを管理するオーケストレーターのインターフェース。"""
+def new_orchestrate[SearchState, Query, Context, Evidence](
+    initial_state: SearchState,
+    propose: ProposeFn[SearchState, Query, Context],
+    observe: ObserveFn[Query, Evidence],
+    propagate: PropagateFn[SearchState, Query, Context, Evidence],
+    termination_strategy: TerminationStrategy[SearchState],
+) -> OrchestrateFn[SearchState]:
+    async def orchestrate() -> SearchState:
+        state = initial_state
+        while not termination_strategy(state):
+            query, context = await propose(state)
+            evidence = await observe(query)
+            state = propagate(state, query, context, evidence)
+        return state
 
-    # NOTE: runで全部受け取るより、init関数でコンポーネント受け取る方がよくね？
-    def run(self) -> SearchState: ...
-
-"""
-# Controllerから見たorchestratorの利用
-orchestrator = funsearch.mcts()
-orchestrator.init(propose, observe, propagate)
-orchestrator.run(initial_state, max_iterations=100, target_score=1000.0)
-"""
+    return orchestrate
