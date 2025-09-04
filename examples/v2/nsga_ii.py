@@ -37,6 +37,10 @@ class SearchState:
     summary: Dict[str, Any] = field(default_factory=dict)
 
 
+# Context: ProposeFnでQueryを生成する際の文脈情報。
+Context = Dict[str, Any]
+
+
 @dataclass(frozen=True)
 class Evidence:
     """ObserveFnが返す評価結果"""
@@ -44,9 +48,9 @@ class Evidence:
 
 
 # --- コア関数のインターフェース定義 ---
-ProposeFn = Callable[[SearchState], Query]
+ProposeFn = Callable[[SearchState], Tuple[Query, Context]]
 ObserveFn = Callable[[Query], Evidence]
-PropagateFn = Callable[[Query, Evidence, SearchState], SearchState]
+PropagateFn = Callable[[Query, Context, Evidence, SearchState], SearchState]
 
 
 # ==============================================================================
@@ -140,10 +144,10 @@ class NSGAProposer:
                 mutated_ind[i] = x + delta_q * range_width
         return np.clip(mutated_ind, self.lower_bound, self.upper_bound)
 
-    def propose_fn(self, search_state: SearchState) -> Query:
+    def propose_fn(self, search_state: SearchState) -> Tuple[Query, Context]:
         """ProposeFnの本体。探索状態に応じて次世代の候補を生成する。"""
         if search_state.generation == 0:
-            return [np.random.uniform(self.lower_bound, self.upper_bound, self.n_vars) for _ in range(self.population_size)]
+            return [np.random.uniform(self.lower_bound, self.upper_bound, self.n_vars) for _ in range(self.population_size)], {}
 
         population = search_state.scored_population
         offspring = []
@@ -155,7 +159,7 @@ class NSGAProposer:
             offspring.append(self._polynomial_mutation(child1))
             if len(offspring) < self.population_size:
                 offspring.append(self._polynomial_mutation(child2))
-        return offspring
+        return offspring, {}
 
 
 def new_nsga_propose_fn(population_size: int, n_vars: int, crossover_rate: float, mutation_rate: float, eta_c: float, eta_m: float, bounds: Tuple[float, float]) -> ProposeFn:
@@ -247,7 +251,7 @@ class NSGAPropagator:
                 front[i].crowding_distance += (front[i+1].scores[m] -
                                                front[i-1].scores[m]) / range_m
 
-    def propagate_fn(self, query: Query, evidence: Evidence, search_state: SearchState) -> SearchState:
+    def propagate_fn(self, query: Query, context: Context, evidence: Evidence, search_state: SearchState) -> SearchState:
         """
         評価結果と現在の探索状態から、次世代の新しいSearchStateオブジェクトを生成して返す。
         """
@@ -310,13 +314,13 @@ class Orchestrator:
 
         while search_state.generation < max_generations:
             # 1. Propose: 新しい仮説(Query)を生成
-            query = propose_fn(search_state)
+            query, context = propose_fn(search_state)
 
             # 2. Observe: Queryを評価し、Evidenceを得る
             evidence = observe_fn(query)
 
             # 3. Propagate: 次世代のSearchStateを計算
-            search_state = propagate_fn(query, evidence, search_state)
+            search_state = propagate_fn(query, context, evidence, search_state)
 
             # --- ログと履歴の記録 ---
             history.append(search_state.summary)

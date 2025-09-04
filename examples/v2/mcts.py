@@ -82,6 +82,7 @@ def new_gridworld_environment() -> GridWorldEnvironment:
         obstacles.add(GridState(1, i))
     for i in range(2, 6):
         obstacles.add(GridState(3, i))
+    obstacles.add(GridState(5, 3))
 
     return GridWorldEnvironment(width, height, start, goal, obstacles, move_cost=-2.0, goal_reward=10.0)
 
@@ -117,6 +118,12 @@ class Query:
                        rewards=self.rewards + [reward])
 
 
+# Context: ProposeFnでQueryを生成する際の文脈情報。
+Context = Dict[str, Any]
+# Evidence: ObserveFnが返す評価結果。（シミュレーション結果）
+Evidence = float
+
+
 @dataclass(frozen=True)
 class SearchState:
     """探索プロセスの主要な状態。探索木の情報を不変オブジェクトとして保持する。"""
@@ -132,14 +139,10 @@ class SearchState:
         return self.n_stats.get(state, 0)
 
 
-type Evidence = float
-"""ObserveFnが返す評価結果。（シミュレーション結果）"""
-
-
-# --- III. コア関数のインターフェース定義 ---
-ProposeFn = Callable[[SearchState], Query]
+# --- III. コア関数のインターフェース定義 (Design-Aligned) ---
+ProposeFn = Callable[[SearchState], Tuple[Query, Context]]
 ObserveFn = Callable[[Query], Evidence]
-PropagateFn = Callable[[Query, Evidence, SearchState], SearchState]
+PropagateFn = Callable[[Query, Context, Evidence, SearchState], SearchState]
 
 
 # --- IV. コンポーネント実装 (MCTS Implementation) ---
@@ -161,11 +164,10 @@ class MCTSComponents:
         exploration = self.C * math.sqrt(math.log(parent_N) / stats.N)
         return exploitation + exploration
 
-    def propose_fn(self, search_state: SearchState) -> Query:
-        """Selection & Expansion: UCB1に基づき探索木をたどり、パスを選択・展開する。"""
+    def propose_fn(self, search_state: SearchState) -> Tuple[Query, Context]:
+        """Selection & Expansion: UCB1に基づき探索木をたどり、パス(Query)と空の文脈(Context)を生成する。"""
         current_state = self.env.start
         path = Query().append_start(current_state)
-        # パス中の訪問済み状態を高速にチェックするためのセット
         visited_in_path = {current_state}
         depth = 0
 
@@ -194,9 +196,11 @@ class MCTSComponents:
             visited_in_path.add(next_state)
             current_state = next_state
             depth += 1
+
             if is_expansion:
                 break
-        return path
+
+        return path, {}
 
     def observe_fn(self, path_candidate: Query) -> Evidence:
         """Simulation (Default Policy): パスの先端からランダムポリシーでロールアウトし、報酬を見積もる。"""
@@ -217,7 +221,7 @@ class MCTSComponents:
             rollout_step += 1
         return G_rollout
 
-    def propagate_fn(self, query: Query, evidence: Evidence, search_state: SearchState) -> SearchState:
+    def propagate_fn(self, query: Query, context: Context, evidence: Evidence, search_state: SearchState) -> SearchState:
         """Backpropagation: シミュレーション結果を用いて新しいSearchStateを生成する。"""
         next_q_stats = search_state.q_stats.copy()
         next_n_stats = search_state.n_stats.copy()
@@ -234,8 +238,10 @@ class MCTSComponents:
             next_q_stats[sa_pair] = new_q_stats
             next_n_stats[state] = next_n_stats.get(state, 0) + 1
 
-        summary = {"iteration": search_state.iteration +
-                   1, "estimated_return": G}
+        summary = {
+            "iteration": search_state.iteration + 1,
+            "estimated_return": G,
+        }
         return SearchState(
             iteration=search_state.iteration + 1,
             q_stats=next_q_stats,
@@ -245,7 +251,7 @@ class MCTSComponents:
 
 
 def new_mcts_components(exploration_constant: float, discount_factor: float, max_depth: int, environment: GridWorldEnvironment) -> Tuple[ProposeFn, ObserveFn, PropagateFn]:
-    """MCTSコンポーネントのファクトリ関数。"""
+    """MCTSコンポーネントのファクトリー関数。"""
     mcts = MCTSComponents(exploration_constant,
                           discount_factor, max_depth, environment)
     return mcts.propose_fn, mcts.observe_fn, mcts.propagate_fn
@@ -262,9 +268,9 @@ class Orchestrator:
         start_time = time.time()
 
         while search_state.iteration < max_iterations:
-            query = propose_fn(search_state)
+            query, context = propose_fn(search_state)
             evidence = observe_fn(query)
-            search_state = propagate_fn(query, evidence, search_state)
+            search_state = propagate_fn(query, context, evidence, search_state)
 
             if (search_state.iteration % (max_iterations // 10 or 1) == 0) or search_state.iteration == max_iterations:
                 print(
@@ -328,12 +334,12 @@ def visualize_gridworld(env: GridWorldEnvironment, plan: Query):
 # --- VII. エントリーポイント (Entry Point) ---
 def main_controller():
     """依存性を注入し、Orchestratorを実行するエントリーポイント。"""
-    print("--- GAS PoC: MCTS on MDP (GridWorld) [Tuned Pruning] ---")
+    print("--- GAS PoC: MCTS on MDP (GridWorld) [Design-Aligned] ---")
 
     SEED = 42
     MAX_ITERATIONS = 5000
     EXPLORATION_CONSTANT = 20.0
-    DISCOUNT_FACTOR = 0.9
+    DISCOUNT_FACTOR = 0.8
     MAX_DEPTH = 36
     random.seed(SEED)
 
