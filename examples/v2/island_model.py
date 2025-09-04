@@ -408,7 +408,8 @@ class Orchestrator:
         if best_ansatz:
             # 解の次元数が多い場合は先頭のみ表示
             display_len = min(len(best_ansatz), 5)
-            # print(f"最良解 (先頭{display_len}次元): {[f'{x:.4f}' for x in best_ansatz[:display_len]]}...")
+            print(
+                f"最良解 (先頭{display_len}次元): {[f'{x:.4f}' for x in best_ansatz[:display_len]]}...")
 
 
 # --- VI. エントリーポイント (Controller) ---
@@ -484,4 +485,3 @@ def main_controller():
 
 if __name__ == "__main__":
     main_controller()
-    pass
