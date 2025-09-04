@@ -21,7 +21,7 @@
 ## I. Command Service: 探索プロセスの実行
 
 仮説生成と評価のサイクルを駆動し、解を探索するメインサービス。`asyncio`を活用し、`ProposeFn`のLLM API呼び出しや`ObserveFn`のGPU計算といったI/Oバウンドなタスクを効率的に処理する。リアルタイムロギングはstateとは関係ないイベントとしてQueueを用いて実装する予定。
-
+ 
 * **`Controller` (システムのライフサイクル管理)**
 
     * **役割**: 探索プロセスのライフサイクル（開始、再開、中断、終了）と、状態永続化のタイミング（ポリシー）を管理する。
@@ -189,4 +189,15 @@ C4Component
     Rel(orchestrator, search_state, "d. 新状態で更新")
     
     UpdateLayoutConfig($c4ShapeInRow="3")
+```
+
+# 設計モデルの修正点
+```
+- 1. `ProposeFn`を呼び出し、評価対象の仮説群 `Query` を得る。
++ 1. `ProposeFn`を呼び出し、評価対象の仮説群 `Query` と、その生成文脈 `Context` を得る。
+```
+
+# Old PoC
+```python
+
 ```
