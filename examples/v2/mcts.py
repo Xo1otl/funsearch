@@ -8,8 +8,6 @@ from enum import Enum, auto
 
 # =========================================================================
 # MCTS PoC for Markov Decision Process (MDP) - GridWorld
-#
-# (改善版：無駄な探索パスを除外する枝刈りロジックを追加)
 # =========================================================================
 
 # --- I. 環境定義 (Environment Definition - GridWorld MDP) ---
@@ -101,7 +99,7 @@ class Stats:
 
 
 @dataclass(frozen=True)
-class MDPPath:
+class Query:
     """探索されたパス。(s0, a0, r1, s1, ...)"""
     states: List[GridState] = field(default_factory=list)
     actions: List[Action] = field(default_factory=list)
@@ -139,9 +137,9 @@ type Evidence = float
 
 
 # --- III. コア関数のインターフェース定義 ---
-ProposeFn = Callable[[SearchState], MDPPath]
-ObserveFn = Callable[[MDPPath], Evidence]
-PropagateFn = Callable[[MDPPath, Evidence, SearchState], SearchState]
+ProposeFn = Callable[[SearchState], Query]
+ObserveFn = Callable[[Query], Evidence]
+PropagateFn = Callable[[Query, Evidence, SearchState], SearchState]
 
 
 # --- IV. コンポーネント実装 (MCTS Implementation) ---
@@ -163,12 +161,10 @@ class MCTSComponents:
         exploration = self.C * math.sqrt(math.log(parent_N) / stats.N)
         return exploitation + exploration
 
-    def propose_fn(self, search_state: SearchState) -> MDPPath:
-        """Selection & Expansion: UCB1に基づき探索木をたどり、パスを選択・展開する。
-        (改善版：無駄な手を枝刈りするロジックを含む)
-        """
+    def propose_fn(self, search_state: SearchState) -> Query:
+        """Selection & Expansion: UCB1に基づき探索木をたどり、パスを選択・展開する。"""
         current_state = self.env.start
-        path = MDPPath().append_start(current_state)
+        path = Query().append_start(current_state)
         # パス中の訪問済み状態を高速にチェックするためのセット
         visited_in_path = {current_state}
         depth = 0
@@ -202,7 +198,7 @@ class MCTSComponents:
                 break
         return path
 
-    def observe_fn(self, path_candidate: MDPPath) -> Evidence:
+    def observe_fn(self, path_candidate: Query) -> Evidence:
         """Simulation (Default Policy): パスの先端からランダムポリシーでロールアウトし、報酬を見積もる。"""
         current_state = path_candidate.states[-1]
         G_rollout = 0.0
@@ -221,7 +217,7 @@ class MCTSComponents:
             rollout_step += 1
         return G_rollout
 
-    def propagate_fn(self, query: MDPPath, evidence: Evidence, search_state: SearchState) -> SearchState:
+    def propagate_fn(self, query: Query, evidence: Evidence, search_state: SearchState) -> SearchState:
         """Backpropagation: シミュレーション結果を用いて新しいSearchStateを生成する。"""
         next_q_stats = search_state.q_stats.copy()
         next_n_stats = search_state.n_stats.copy()
@@ -282,10 +278,10 @@ class Orchestrator:
 
 
 # --- VI. 結果の解釈と可視化 (Interpretation & Visualization) ---
-def get_best_plan(search_state: SearchState, environment: GridWorldEnvironment) -> Tuple[MDPPath, float]:
+def get_best_plan(search_state: SearchState, environment: GridWorldEnvironment) -> Tuple[Query, float]:
     """探索結果から、現在の最良のプラン（行動系列）を抽出する。"""
     current_state = environment.start
-    path = MDPPath().append_start(current_state)
+    path = Query().append_start(current_state)
     total_reward = 0.0
     max_plan_depth = environment.width * environment.height
 
@@ -296,8 +292,6 @@ def get_best_plan(search_state: SearchState, environment: GridWorldEnvironment) 
         if not visitable_actions:
             break
 
-        # ▼▼▼ 変更点：最も期待値(average_Q)が高い手ではなく、最も訪問回数(N)が多い手を選択する ▼▼▼
-        # これにより、偶然による高い評価に惑わされにくく、より安定した（信頼性の高い）経路が選ばれる。
         best_action = max(
             visitable_actions, key=lambda a: search_state.get_q_stats(current_state, a).N)
 
@@ -308,7 +302,7 @@ def get_best_plan(search_state: SearchState, environment: GridWorldEnvironment) 
     return path, total_reward
 
 
-def visualize_gridworld(env: GridWorldEnvironment, plan: MDPPath):
+def visualize_gridworld(env: GridWorldEnvironment, plan: Query):
     print("\n--- GridWorld Visualization ---")
     grid = [['.' for _ in range(env.width)] for _ in range(env.height)]
     for obs in env.obstacles:
@@ -354,7 +348,7 @@ def main_controller():
     initial_search_state = SearchState(iteration=0, q_stats={}, n_stats={})
 
     print(f"\n--- 探索開始 (最大 {MAX_ITERATIONS} イテレーション) ---")
-    visualize_gridworld(environment, MDPPath())
+    visualize_gridworld(environment, Query())
 
     final_search_state = orchestrator.run(
         propose_fn=propose_fn,
