@@ -113,6 +113,61 @@ C4Component
     UpdateLayoutConfig($c4ShapeInRow="3")
 ```
 
+```mermaid
+C4Component
+    title Level 3: Component Diagram for I. Command Service
+
+    %% --- External Dependencies & Actors ---
+    Container(application, "Application", "Process Entrypoint")
+    ContainerDb(primary_db, "Primary Datastore", "For persistence")
+    System_Ext(external_services, "External Services", "LLM, GPU, etc.")
+
+
+    Container_Boundary(command_service, "I. Command Service") {
+
+        Component(control_loop, "ControlLoop", "Central Controller")
+        Component(state, "State", "In-Memory Data")
+
+        Boundary(strategy, "Strategy") {
+            Component(dispatch, "Dispatch", "Task Issuing Logic")
+            Component(propagate, "Propagate", "State Update Logic")
+            Component(should_terminate, "ShouldTerminate", "Termination Condition Logic")
+        }
+        
+        Boundary(pipeline, "Execution Pipeline") {
+            Component(task1_pool, "Task1 Pool", "Worker Goroutines")
+            Component(aggregator, "Aggregator (Optional)", "Batching Logic")
+            Component(task2_pool, "Task2 Pool", "Worker Goroutines")
+        }
+    }
+    
+    %% --- Initialization Flow ---
+    Rel(application, control_loop, "1. Starts")
+    Rel(application, state, "2. Initializes")
+    Rel(application, pipeline, "3. Initializes")
+    Rel_Back(state, primary_db, "Can be hydrated from")
+
+
+    %% --- Core Control Loop ---
+    Rel(control_loop, should_terminate, "a. Checks termination with")
+    Rel(control_loop, propagate, "c. Updates state via")
+    Rel(control_loop, dispatch, "d. Issues new tasks via")
+
+
+    %% --- State Access by Strategy ---
+    Rel(dispatch, state, "Reads")
+    Rel(propagate, state, "Reads / Writes")
+    Rel(should_terminate, state, "Reads")
+
+
+    %% --- Data Pipeline Flow ---
+    Rel(dispatch, task1_pool, "Sends Request", "task1ReqChan")
+    Rel(task1_pool, aggregator, "Sends Context", "task1ResChan")
+    Rel(aggregator, task2_pool, "Sends Context", "task2ReqChan")
+    Rel(task2_pool, control_loop, "b. Sends Result to", "task2ResChan")
+    Rel(task2_pool, external_services, "Uses")
+```
+
 # SequenceDiagram
 ```mermaid
 sequenceDiagram
