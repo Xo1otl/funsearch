@@ -7,7 +7,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "google-genai",
-    "jax[cuda12]",
     "optax",
     "pandas",
     "gradio",
