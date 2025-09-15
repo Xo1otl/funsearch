@@ -4,19 +4,15 @@ version = "0.1.0"
 description = ""
 authors = [{ name = "Xo1otl", email = "xolotl.mictl4n@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "google-genai",
     "optax",
     "pandas",
     "gradio",
-    "infra",
-    "workspace",
+    "matplotlib",
+    "japanize_matplotlib",
 ]
-
-[tool.uv.sources]
-infra = { workspace = true }
-workspace = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
